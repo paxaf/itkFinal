@@ -1,4 +1,4 @@
-module github.com/paxaf/itkFinal
+module github.com/paxaf/itkFinal/proto-exchange
 
 go 1.25.4
 
