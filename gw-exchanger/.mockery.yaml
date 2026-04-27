@@ -1,0 +1,23 @@
+with-expecter: true
+issue-845-fix: true
+resolve-type-alias: false
+disable-version-string: true
+
+packages:
+  github.com/paxaf/itkFinal/gw-exchanger/internal/storages:
+    config:
+      dir: internal/mocks/storages
+      outpkg: storagesmocks
+      filename: storage_mock.go
+      mockname: StorageMock
+    interfaces:
+      Storage: {}
+
+  github.com/paxaf/itkFinal/gw-exchanger/internal/usecase:
+    config:
+      dir: internal/mocks/usecase
+      outpkg: usecasemocks
+      filename: exchanger_mock.go
+      mockname: ExchangerMock
+    interfaces:
+      Exchanger: {}
