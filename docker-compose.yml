@@ -1,0 +1,45 @@
+services:
+  gw-exchanger:
+    build:
+      context: ./gw-exchanger
+      dockerfile: Dockerfile
+    container_name: gw-exchanger
+    environment:
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: 50051
+      POSTGRES_HOST: exchanger-db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: exchange
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_SSLMODE: disable
+      POSTGRES_MAX_OPEN_CONNS: 20
+      POSTGRES_MAX_IDLE_CONNS: 10
+      RUN_MIGRATIONS: true
+      MIGRATIONS_DIR: /app/migrations
+      LOG_LEVEL: debug
+    ports:
+      - "50051:50051"
+    depends_on:
+      exchanger-db:
+        condition: service_healthy
+
+  exchanger-db:
+    image: postgres:16-alpine
+    container_name: exchanger-db
+    environment:
+      POSTGRES_DB: exchange
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - exchanger_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d exchange"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  exchanger_db_data:

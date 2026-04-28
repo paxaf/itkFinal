@@ -1,0 +1,9 @@
+.git/
+.gocache/
+.gopath/
+
+main
+*.out
+*.test
+
+README.md
