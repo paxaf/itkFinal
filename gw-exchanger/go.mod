@@ -4,6 +4,7 @@ go 1.25.4
 
 require (
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/paxaf/itkFinal/proto-exchange v0.0.0-20260428072001-d55e5d2ed824
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
@@ -19,7 +20,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/paxaf/itkFinal/proto-exchange v0.0.0-00010101000000-000000000000 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
@@ -38,5 +38,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/paxaf/itkFinal/proto-exchange => ../proto-exchange
