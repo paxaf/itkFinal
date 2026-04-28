@@ -12,12 +12,19 @@ import (
 
 	"github.com/paxaf/itkFinal/gw-exchanger/internal/config"
 	"github.com/paxaf/itkFinal/gw-exchanger/internal/logger"
+	"github.com/paxaf/itkFinal/gw-exchanger/internal/storages"
+	"github.com/paxaf/itkFinal/gw-exchanger/internal/storages/postgres"
+	"github.com/paxaf/itkFinal/gw-exchanger/internal/usecase"
+	exchangegrpc "github.com/paxaf/itkFinal/proto-exchange/exchange"
 	"google.golang.org/grpc"
+
+	grpcHandler "github.com/paxaf/itkFinal/gw-exchanger/internal/transport/grpc"
 )
 
 type App struct {
 	cfg        *config.Config
 	log        *logger.Logger
+	storage    storages.Storage
 	grpcServer *grpc.Server
 	path       string
 }
@@ -40,12 +47,19 @@ func New() (*App, error) {
 		"postgres_db":   cfg.Postgres.Name,
 		"log_level":     cfg.Logger.Level,
 	})
-
+	pool, err := postgres.New(&cfg.Postgres)
+	if err != nil {
+		return nil, fmt.Errorf("connect to database: %w", err)
+	}
+	exchangerUC := usecase.New(pool)
 	grpcServer := grpc.NewServer()
+	handler := grpcHandler.NewHandler(exchangerUC, log)
+	exchangegrpc.RegisterExchangeServiceServer(grpcServer, handler)
 
 	return &App{
 		cfg:        cfg,
 		log:        log,
+		storage:    pool,
 		grpcServer: grpcServer,
 		path:       configPath,
 	}, nil
@@ -83,7 +97,14 @@ func (a *App) Run() error {
 }
 
 func (a *App) Close() error {
-	a.grpcServer.GracefulStop()
+	if a.grpcServer != nil {
+		a.grpcServer.GracefulStop()
+	}
+	if a.storage != nil {
+		if err := a.storage.Close(); err != nil {
+			return fmt.Errorf("close storage: %w", err)
+		}
+	}
 	a.log.Info("application shutdown completed")
 	return nil
 }
