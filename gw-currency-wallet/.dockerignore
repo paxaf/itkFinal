@@ -1,0 +1,8 @@
+.git
+.gitignore
+.gocache
+.gopath
+.tmp
+bin
+main
+coverage.out

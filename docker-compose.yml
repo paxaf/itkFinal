@@ -24,6 +24,45 @@ services:
       exchanger-db:
         condition: service_healthy
 
+  gw-currency-wallet:
+    build:
+      context: ./gw-currency-wallet
+      dockerfile: Dockerfile
+    container_name: gw-currency-wallet
+    environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8080
+      HTTP_ACCESS_LOG: true
+      POSTGRES_HOST: wallet-db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: wallet
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_SSLMODE: disable
+      POSTGRES_MAX_OPEN_CONNS: 20
+      POSTGRES_MAX_IDLE_CONNS: 10
+      POSTGRES_API_MAX_OPEN_CONNS: 10
+      POSTGRES_WORKER_MAX_OPEN_CONNS: 10
+      JWT_SECRET: local-dev-secret
+      JWT_TOKEN_TTL_MINUTES: 60
+      EXCHANGER_GRPC_HOST: gw-exchanger
+      EXCHANGER_GRPC_PORT: 50051
+      EXCHANGER_GRPC_REQUEST_TIMEOUT_MS: 3000
+      WORKER_POLL_INTERVAL_MS: 1000
+      WORKER_WALLETS_LIMIT: 128
+      WORKER_BATCH_SIZE: 128
+      WORKER_CONCURRENCY: 2
+      RUN_MIGRATIONS: true
+      MIGRATIONS_DIR: /app/migrations
+      LOG_LEVEL: debug
+    ports:
+      - "8080:8080"
+    depends_on:
+      wallet-db:
+        condition: service_healthy
+      gw-exchanger:
+        condition: service_started
+
   exchanger-db:
     image: postgres:16-alpine
     container_name: exchanger-db
@@ -41,5 +80,23 @@ services:
       timeout: 3s
       retries: 10
 
+  wallet-db:
+    image: postgres:16-alpine
+    container_name: wallet-db
+    environment:
+      POSTGRES_DB: wallet
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - wallet_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wallet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   exchanger_db_data:
+  wallet_db_data:
