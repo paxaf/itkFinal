@@ -1,0 +1,340 @@
+basePath: /api/v1
+definitions:
+  http.BalanceResponse:
+    properties:
+      balance:
+        additionalProperties:
+          type: number
+        type: object
+    type: object
+  http.ErrorResponse:
+    properties:
+      error:
+        example: bad request
+        type: string
+    type: object
+  http.ExchangeRequest:
+    properties:
+      amount:
+        example: 100
+        type: number
+      from_currency:
+        enum:
+        - USD
+        - EUR
+        - RUB
+        example: USD
+        type: string
+      to_currency:
+        enum:
+        - USD
+        - EUR
+        - RUB
+        example: EUR
+        type: string
+    type: object
+  http.ExchangeResponse:
+    properties:
+      exchanged_amount:
+        example: 92
+        type: number
+      message:
+        example: Exchange successful
+        type: string
+      new_balance:
+        additionalProperties:
+          type: number
+        type: object
+    type: object
+  http.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  http.LoginRequest:
+    properties:
+      password:
+        example: secret1
+        type: string
+      username:
+        example: paxaf
+        type: string
+    type: object
+  http.LoginResponse:
+    properties:
+      token:
+        example: jwt-token
+        type: string
+    type: object
+  http.MessageResponse:
+    properties:
+      message:
+        example: User registered successfully
+        type: string
+    type: object
+  http.MoneyOperationRequest:
+    properties:
+      amount:
+        example: 100.5
+        type: number
+      currency:
+        enum:
+        - USD
+        - EUR
+        - RUB
+        example: USD
+        type: string
+    type: object
+  http.NewBalanceResponse:
+    properties:
+      message:
+        example: Account topped up successfully
+        type: string
+      new_balance:
+        additionalProperties:
+          type: number
+        type: object
+    type: object
+  http.RatesResponse:
+    properties:
+      rates:
+        additionalProperties:
+          type: number
+        type: object
+    type: object
+  http.RegisterRequest:
+    properties:
+      email:
+        example: paxaf@example.com
+        type: string
+      password:
+        example: secret1
+        type: string
+      username:
+        example: paxaf
+        type: string
+    type: object
+info:
+  contact: {}
+  description: HTTP API for registration, JWT authorization, balances, deposits, withdrawals
+    and currency exchange.
+  title: Currency Wallet API
+  version: 0.1.0
+paths:
+  /balance:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.BalanceResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user balances
+      tags:
+      - wallet
+  /exchange:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Exchange request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.ExchangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.ExchangeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Exchange money between currencies
+      tags:
+      - exchange
+  /exchange/rates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.RatesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get exchange rates
+      tags:
+      - exchange
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.HealthResponse'
+      summary: Check service health
+      tags:
+      - health
+  /login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Login request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Login and receive JWT token
+      tags:
+      - auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Register request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/http.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Register a user
+      tags:
+      - auth
+  /wallet/deposit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Deposit request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.MoneyOperationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.NewBalanceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Deposit money to wallet
+      tags:
+      - wallet
+  /wallet/withdraw:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Withdraw request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.MoneyOperationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.NewBalanceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Withdraw money from wallet
+      tags:
+      - wallet
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

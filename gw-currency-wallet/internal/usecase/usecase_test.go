@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
@@ -60,6 +61,12 @@ func (s *UseCaseSuite) TestRegisterReturnsDuplicateUser() {
 	s.Require().ErrorIs(err, storages.ErrDuplicateUser)
 }
 
+func (s *UseCaseSuite) TestRegisterReturnsValidationError() {
+	_, err := s.service.Register(s.ctx, domain.RegisterUser{Username: "", Email: "bad", Password: "123"})
+
+	s.Require().ErrorIs(err, domain.ErrInvalidUsername)
+}
+
 func (s *UseCaseSuite) TestLoginReturnsToken() {
 	hash, err := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
 	s.Require().NoError(err)
@@ -75,12 +82,37 @@ func (s *UseCaseSuite) TestLoginReturnsToken() {
 	s.Require().Equal(int64(42), s.tokens.userID)
 }
 
+func (s *UseCaseSuite) TestLoginReturnsStorageError() {
+	s.storage.credentialsErr = errBoom
+
+	_, err := s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
+
+	s.Require().ErrorIs(err, errBoom)
+}
+
+func (s *UseCaseSuite) TestLoginReturnsTokenError() {
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
+	s.Require().NoError(err)
+	s.storage.credentials = domain.UserCredentials{User: domain.User{ID: 42}, PasswordHash: string(hash)}
+	s.tokens.err = errBoom
+
+	_, err = s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
+
+	s.Require().ErrorIs(err, errBoom)
+}
+
 func (s *UseCaseSuite) TestLoginReturnsInvalidCredentialsOnWrongPassword() {
 	hash, err := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
 	s.Require().NoError(err)
 	s.storage.credentials = domain.UserCredentials{User: domain.User{ID: 42}, PasswordHash: string(hash)}
 
 	_, err = s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "badpass"})
+
+	s.Require().ErrorIs(err, domain.ErrInvalidCredentials)
+}
+
+func (s *UseCaseSuite) TestLoginReturnsInvalidCredentialsWhenUserMissing() {
+	_, err := s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
 
 	s.Require().ErrorIs(err, domain.ErrInvalidCredentials)
 }
@@ -92,6 +124,20 @@ func (s *UseCaseSuite) TestGetBalanceNormalizesMissingCurrencies() {
 
 	s.Require().NoError(err)
 	s.Require().Equal(map[string]int64{"USD": 10000, "RUB": 0, "EUR": 0}, balance)
+}
+
+func (s *UseCaseSuite) TestGetBalanceErrors() {
+	_, err := s.service.GetBalance(s.ctx, 0)
+	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
+
+	s.storage.balancesErr = errBoom
+	_, err = s.service.GetBalance(s.ctx, 1)
+	s.Require().ErrorIs(err, errBoom)
+
+	s.storage.balancesErr = nil
+	s.storage.balances = map[string]int64{"GBP": 100}
+	_, err = s.service.GetBalance(s.ctx, 1)
+	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
 }
 
 func (s *UseCaseSuite) TestDepositCallsStorage() {
@@ -108,6 +154,26 @@ func (s *UseCaseSuite) TestDepositCallsStorage() {
 	s.Require().Equal(int64(10050), balance["USD"])
 }
 
+func (s *UseCaseSuite) TestDepositErrors() {
+	_, err := s.service.Deposit(s.ctx, 1, "GBP", 100)
+	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
+
+	_, err = s.service.Deposit(s.ctx, 0, "USD", 100)
+	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
+
+	s.storage.depositFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
+		return nil, errBoom
+	}
+	_, err = s.service.Deposit(s.ctx, 1, "USD", 100)
+	s.Require().ErrorIs(err, errBoom)
+
+	s.storage.depositFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
+		return map[string]int64{"GBP": 100}, nil
+	}
+	_, err = s.service.Deposit(s.ctx, 1, "USD", 100)
+	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
+}
+
 func (s *UseCaseSuite) TestWithdrawReturnsInsufficientFunds() {
 	s.storage.withdrawFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
 		return nil, domain.ErrInsufficientFunds
@@ -118,6 +184,45 @@ func (s *UseCaseSuite) TestWithdrawReturnsInsufficientFunds() {
 	s.Require().ErrorIs(err, domain.ErrInsufficientFunds)
 }
 
+func (s *UseCaseSuite) TestWithdrawSuccessAndErrors() {
+	s.storage.withdrawFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
+		return map[string]int64{"USD": 5000}, nil
+	}
+	balance, err := s.service.Withdraw(s.ctx, 1, "USD", 100)
+	s.Require().NoError(err)
+	s.Require().Equal(int64(5000), balance["USD"])
+
+	_, err = s.service.Withdraw(s.ctx, 1, "GBP", 100)
+	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
+
+	_, err = s.service.Withdraw(s.ctx, 1, "USD", 0)
+	s.Require().ErrorIs(err, domain.ErrInvalidAmount)
+}
+
+func (s *UseCaseSuite) TestWalletOperation() {
+	err := s.service.WalletOperation(s.ctx, domain.WalletOperation{
+		UserID:        1,
+		Currency:      domain.CurrencyUSD,
+		OperationType: domain.OperationDeposit,
+		AmountMinor:   100,
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), s.storage.enqueuedUserID)
+	s.Require().NotEmpty(s.storage.enqueuedOperationID)
+
+	err = s.service.WalletOperation(s.ctx, domain.WalletOperation{})
+	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
+
+	s.storage.enqueueErr = errBoom
+	err = s.service.WalletOperation(s.ctx, domain.WalletOperation{
+		UserID:        1,
+		Currency:      domain.CurrencyUSD,
+		OperationType: domain.OperationDeposit,
+		AmountMinor:   100,
+	})
+	s.Require().ErrorIs(err, errBoom)
+}
+
 func (s *UseCaseSuite) TestGetExchangeRates() {
 	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
 
@@ -125,6 +230,26 @@ func (s *UseCaseSuite) TestGetExchangeRates() {
 
 	s.Require().NoError(err)
 	s.Require().Equal(float64(0.92), rates["EUR"])
+}
+
+func (s *UseCaseSuite) TestGetExchangeRatesErrors() {
+	s.service.exchanger = nil
+	_, err := s.service.GetExchangeRates(s.ctx)
+	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
+
+	s.service.exchanger = s.exchanger
+	s.exchanger.err = errBoom
+	_, err = s.service.GetExchangeRates(s.ctx)
+	s.Require().ErrorIs(err, errBoom)
+
+	s.exchanger.err = nil
+	s.exchanger.rates = map[string]float64{"GBP": 1}
+	_, err = s.service.GetExchangeRates(s.ctx)
+	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
+
+	s.exchanger.rates = map[string]float64{"USD": 0}
+	_, err = s.service.GetExchangeRates(s.ctx)
+	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 }
 
 func (s *UseCaseSuite) TestExchangeConvertsAndStoresAtomically() {
@@ -148,6 +273,75 @@ func (s *UseCaseSuite) TestExchangeConvertsAndStoresAtomically() {
 	s.Require().NoError(err)
 	s.Require().Equal(int64(9200), result.ExchangedAmountMinor)
 	s.Require().Equal(int64(9200), result.NewBalance["EUR"])
+}
+
+func (s *UseCaseSuite) TestExchangeErrors() {
+	_, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{})
+	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
+
+	validOp := domain.ExchangeOperation{UserID: 1, FromCurrency: domain.CurrencyUSD, ToCurrency: domain.CurrencyEUR, AmountMinor: 100}
+
+	s.service.exchanger = nil
+	_, err = s.service.Exchange(s.ctx, validOp)
+	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
+
+	s.service.exchanger = s.exchanger
+	s.exchanger.err = errBoom
+	_, err = s.service.Exchange(s.ctx, validOp)
+	s.Require().ErrorIs(err, errBoom)
+
+	s.exchanger.err = nil
+	s.exchanger.rate = 0
+	_, err = s.service.Exchange(s.ctx, validOp)
+	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
+
+	s.exchanger.rate = 0.001
+	_, err = s.service.Exchange(s.ctx, validOp)
+	s.Require().ErrorIs(err, domain.ErrConvertedAmountTooSmall)
+
+	s.exchanger.rate = 1
+	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
+		return nil, domain.ErrInsufficientFunds
+	}
+	_, err = s.service.Exchange(s.ctx, validOp)
+	s.Require().ErrorIs(err, domain.ErrInsufficientFunds)
+
+	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
+		return map[string]int64{"GBP": 100}, nil
+	}
+	_, err = s.service.Exchange(s.ctx, validOp)
+	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
+}
+
+func (s *UseCaseSuite) TestProcessorService() {
+	processor := NewProcessor(s.storage, ProcessorConfig{})
+	s.storage.pendingWallets = []string{"1:USD"}
+
+	wallets, err := processor.ListPendingWallets(s.ctx, 10)
+	s.Require().NoError(err)
+	s.Require().Equal([]string{"1:USD"}, wallets)
+
+	err = processor.ProcessWallet(s.ctx, "1:USD")
+	s.Require().NoError(err)
+	s.Require().Equal("1:USD", s.storage.processedWalletKey)
+	s.Require().Equal(128, s.storage.processedBatchSize)
+}
+
+func (s *UseCaseSuite) TestProcessorServiceErrors() {
+	processor := NewProcessor(s.storage, ProcessorConfig{BatchSize: 7})
+	canceledCtx, cancel := context.WithCancel(s.ctx)
+	cancel()
+
+	_, err := processor.ListPendingWallets(canceledCtx, 10)
+	s.Require().ErrorIs(err, context.Canceled)
+
+	err = processor.ProcessWallet(canceledCtx, "1:USD")
+	s.Require().ErrorIs(err, context.Canceled)
+
+	s.storage.processErr = errBoom
+	err = processor.ProcessWallet(s.ctx, "1:USD")
+	s.Require().ErrorIs(err, errBoom)
+	s.Require().Contains(err.Error(), "process wallet")
 }
 
 type fakeTokenManager struct {
@@ -182,8 +376,18 @@ func (f *fakeExchanger) GetRate(ctx context.Context, fromCurrency string, toCurr
 }
 
 type fakeStorage struct {
-	credentials domain.UserCredentials
-	balances    map[string]int64
+	credentials         domain.UserCredentials
+	credentialsErr      error
+	balances            map[string]int64
+	balancesErr         error
+	enqueueErr          error
+	enqueuedOperationID string
+	enqueuedUserID      int64
+	pendingWallets      []string
+	listErr             error
+	processErr          error
+	processedWalletKey  string
+	processedBatchSize  int
 
 	createUserFn func(ctx context.Context, username string, email string, passwordHash string) (domain.User, error)
 	depositFn    func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error)
@@ -199,6 +403,9 @@ func (f *fakeStorage) CreateUser(ctx context.Context, username string, email str
 }
 
 func (f *fakeStorage) GetUserCredentialsByUsername(ctx context.Context, username string) (domain.UserCredentials, error) {
+	if f.credentialsErr != nil {
+		return domain.UserCredentials{}, f.credentialsErr
+	}
 	if f.credentials.ID == 0 {
 		return domain.UserCredentials{}, storages.ErrUserNotFound
 	}
@@ -206,6 +413,9 @@ func (f *fakeStorage) GetUserCredentialsByUsername(ctx context.Context, username
 }
 
 func (f *fakeStorage) GetBalances(ctx context.Context, userID int64) (map[string]int64, error) {
+	if f.balancesErr != nil {
+		return nil, f.balancesErr
+	}
 	if f.balances == nil {
 		return nil, storages.ErrUserNotFound
 	}
@@ -234,17 +444,29 @@ func (f *fakeStorage) Exchange(ctx context.Context, userID int64, fromCurrency d
 }
 
 func (f *fakeStorage) EnqueueOperation(ctx context.Context, operationID string, userID int64, currency domain.Currency, operationType domain.OperationType, amountMinor int64) error {
-	return nil
+	f.enqueuedOperationID = operationID
+	f.enqueuedUserID = userID
+	return f.enqueueErr
 }
 
 func (f *fakeStorage) ListPendingWallets(ctx context.Context, limit int) ([]string, error) {
-	return nil, nil
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.pendingWallets, nil
 }
 
 func (f *fakeStorage) ProcessWalletBatch(ctx context.Context, walletKey string, batchSize int) (int, error) {
-	return 0, nil
+	f.processedWalletKey = walletKey
+	f.processedBatchSize = batchSize
+	if f.processErr != nil {
+		return 0, f.processErr
+	}
+	return 1, nil
 }
 
 func (f *fakeStorage) Close() error {
 	return nil
 }
+
+var errBoom = errors.New("boom")

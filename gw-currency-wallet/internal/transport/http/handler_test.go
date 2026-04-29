@@ -3,13 +3,17 @@ package http
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	stdhttp "net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/auth"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/logger"
+	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/usecase"
 	"github.com/stretchr/testify/suite"
 )
@@ -46,6 +50,30 @@ func (s *HandlerSuite) TestRegisterSuccess() {
 	s.Require().JSONEq(`{"message":"User registered successfully"}`, resp.Body.String())
 }
 
+func (s *HandlerSuite) TestHealth() {
+	resp := s.request(stdhttp.MethodGet, "/api/v1/health", "", "")
+
+	s.Require().Equal(stdhttp.StatusOK, resp.Code)
+	s.Require().JSONEq(`{"status":"ok"}`, resp.Body.String())
+}
+
+func (s *HandlerSuite) TestRegisterBadJSON() {
+	resp := s.request(stdhttp.MethodPost, "/api/v1/register", `{"username":"paxaf",}`, "")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
+func (s *HandlerSuite) TestRegisterDuplicateUser() {
+	s.uc.registerFn = func(ctx context.Context, user domain.RegisterUser) (domain.User, error) {
+		return domain.User{}, storages.ErrDuplicateUser
+	}
+
+	resp := s.request(stdhttp.MethodPost, "/api/v1/register", `{"username":"paxaf","password":"secret1","email":"paxaf@example.com"}`, "")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+	s.Require().JSONEq(`{"error":"Username or email already exists"}`, resp.Body.String())
+}
+
 func (s *HandlerSuite) TestLoginSuccess() {
 	s.uc.loginFn = func(ctx context.Context, user domain.LoginUser) (string, error) {
 		s.Require().Equal("paxaf", user.Username)
@@ -58,8 +86,26 @@ func (s *HandlerSuite) TestLoginSuccess() {
 	s.Require().JSONEq(`{"token":"jwt-token"}`, resp.Body.String())
 }
 
+func (s *HandlerSuite) TestLoginInvalidCredentials() {
+	s.uc.loginFn = func(ctx context.Context, user domain.LoginUser) (string, error) {
+		return "", domain.ErrInvalidCredentials
+	}
+
+	resp := s.request(stdhttp.MethodPost, "/api/v1/login", `{"username":"paxaf","password":"badpass"}`, "")
+
+	s.Require().Equal(stdhttp.StatusUnauthorized, resp.Code)
+}
+
 func (s *HandlerSuite) TestBalanceRequiresToken() {
 	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "")
+
+	s.Require().Equal(stdhttp.StatusUnauthorized, resp.Code)
+}
+
+func (s *HandlerSuite) TestProtectedRouteRejectsInvalidToken() {
+	s.tokens.err = auth.ErrInvalidToken
+
+	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer broken")
 
 	s.Require().Equal(stdhttp.StatusUnauthorized, resp.Code)
 }
@@ -76,6 +122,16 @@ func (s *HandlerSuite) TestGetBalanceSuccess() {
 	s.Require().JSONEq(`{"balance":{"USD":100.5,"RUB":0,"EUR":92}}`, resp.Body.String())
 }
 
+func (s *HandlerSuite) TestGetBalanceUserNotFound() {
+	s.uc.balanceFn = func(ctx context.Context, userID int64) (map[string]int64, error) {
+		return nil, storages.ErrUserNotFound
+	}
+
+	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusNotFound, resp.Code)
+}
+
 func (s *HandlerSuite) TestDepositSuccess() {
 	s.uc.depositFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
 		s.Require().Equal(int64(7), userID)
@@ -90,6 +146,22 @@ func (s *HandlerSuite) TestDepositSuccess() {
 	s.Require().JSONEq(`{"message":"Account topped up successfully","new_balance":{"USD":100.5,"RUB":0,"EUR":0}}`, resp.Body.String())
 }
 
+func (s *HandlerSuite) TestDepositBadAmount() {
+	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.999,"currency":"USD"}`, "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
+func (s *HandlerSuite) TestDepositUsecaseError() {
+	s.uc.depositFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
+		return nil, domain.ErrInvalidCurrency
+	}
+
+	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.50,"currency":"GBP"}`, "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
 func (s *HandlerSuite) TestWithdrawInsufficientFunds() {
 	s.uc.withdrawFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
 		return nil, domain.ErrInsufficientFunds
@@ -98,6 +170,17 @@ func (s *HandlerSuite) TestWithdrawInsufficientFunds() {
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/withdraw", `{"amount":100.50,"currency":"USD"}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
+func (s *HandlerSuite) TestWithdrawSuccess() {
+	s.uc.withdrawFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
+		return map[string]int64{"USD": 5000, "EUR": 0, "RUB": 0}, nil
+	}
+
+	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/withdraw", `{"amount":50,"currency":"USD"}`, "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusOK, resp.Code)
+	s.Require().JSONEq(`{"message":"Withdrawal successful","new_balance":{"USD":50,"EUR":0,"RUB":0}}`, resp.Body.String())
 }
 
 func (s *HandlerSuite) TestGetExchangeRatesSuccess() {
@@ -109,6 +192,16 @@ func (s *HandlerSuite) TestGetExchangeRatesSuccess() {
 
 	s.Require().Equal(stdhttp.StatusOK, resp.Code)
 	s.Require().JSONEq(`{"rates":{"USD":1,"EUR":0.92,"RUB":90}}`, resp.Body.String())
+}
+
+func (s *HandlerSuite) TestGetExchangeRatesError() {
+	s.uc.ratesFn = func(ctx context.Context) (map[string]float64, error) {
+		return nil, domain.ErrExchangeRateUnavailable
+	}
+
+	resp := s.request(stdhttp.MethodGet, "/api/v1/exchange/rates", "", "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusInternalServerError, resp.Code)
 }
 
 func (s *HandlerSuite) TestExchangeSuccess() {
@@ -127,6 +220,57 @@ func (s *HandlerSuite) TestExchangeSuccess() {
 
 	s.Require().Equal(stdhttp.StatusOK, resp.Code)
 	s.Require().JSONEq(`{"message":"Exchange successful","exchanged_amount":92,"new_balance":{"USD":0,"EUR":92,"RUB":0}}`, resp.Body.String())
+}
+
+func (s *HandlerSuite) TestExchangeBadCurrency() {
+	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"GBP","to_currency":"EUR","amount":100}`, "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
+func (s *HandlerSuite) TestExchangeBadAmount() {
+	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"USD","to_currency":"EUR","amount":0}`, "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
+func (s *HandlerSuite) TestExchangeInsufficientFunds() {
+	s.uc.exchangeFn = func(ctx context.Context, op domain.ExchangeOperation) (usecase.ExchangeResult, error) {
+		return usecase.ExchangeResult{}, domain.ErrInsufficientFunds
+	}
+
+	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"USD","to_currency":"EUR","amount":100}`, "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+}
+
+func (s *HandlerSuite) TestInternalErrorBranch() {
+	s.uc.balanceFn = func(ctx context.Context, userID int64) (map[string]int64, error) {
+		return nil, errors.New("db unavailable")
+	}
+
+	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer ok")
+
+	s.Require().Equal(stdhttp.StatusInternalServerError, resp.Code)
+}
+
+func (s *HandlerSuite) TestAmountToMinor() {
+	tests := map[string]int64{
+		"100":    10000,
+		"100.5":  10050,
+		"100.05": 10005,
+	}
+	for raw, want := range tests {
+		got, err := amountToMinor(json.Number(raw))
+		s.Require().NoError(err)
+		s.Require().Equal(want, got)
+	}
+
+	invalid := []string{"", "-1", "+1", ".10", "1.001", "abc", "1.ab"}
+	for _, raw := range invalid {
+		_, err := amountToMinor(json.Number(raw))
+		s.Require().ErrorIs(err, domain.ErrInvalidAmount)
+	}
 }
 
 func (s *HandlerSuite) request(method string, path string, body string, authHeader string) *httptest.ResponseRecorder {

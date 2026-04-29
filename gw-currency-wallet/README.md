@@ -24,10 +24,15 @@ HTTP API:
 
 Protected routes require `Authorization: Bearer <JWT_TOKEN>`.
 
+API documentation:
+- Swagger UI: `GET /swagger/index.html`
+- Generated OpenAPI spec: `docs/swagger.yaml`
+- Regenerate docs: `make swagger`
+
 Tests:
 - `make test`
 - `make test-integration`
-- `make test-skip-integration`
+- `make test-skip-integration-pg`
 - `go test ./internal/storages/postgres -skip-integration`
 
 Integration tests start PostgreSQL through Docker/testcontainers. If Docker is unavailable, they are skipped automatically.

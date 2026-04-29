@@ -5,7 +5,7 @@ override export GO111MODULE := on
 override export USERPROFILE := $(WIN_USERPROFILE)
 override export LOCALAPPDATA := $(WIN_LOCALAPPDATA)
 
-.PHONY: build test test-all test-integration test-skip-integration-pg tidy test-debug
+.PHONY: build swagger test test-all test-integration test-skip-integration-pg tidy test-debug
 
 test-debug:
 	which go
@@ -14,6 +14,9 @@ test-debug:
 
 build:
 	go build -o main ./cmd
+
+swagger:
+	go run github.com/swaggo/swag/cmd/swag@v1.8.12 init --dir ./cmd,./internal/transport/http --generalInfo main.go --output docs --parseInternal
 
 test:
 	go test ./... -skip Integration
