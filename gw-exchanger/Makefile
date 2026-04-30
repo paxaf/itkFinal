@@ -5,7 +5,7 @@ override export GO111MODULE := on
 override export USERPROFILE := $(WIN_USERPROFILE)
 override export LOCALAPPDATA := $(WIN_LOCALAPPDATA)
 
-.PHONY: mocks test
+.PHONY: build lint mocks mocks-debug test test-all test-integration test-skip-integration-pg tidy
 
 mocks-debug:
 	which go
@@ -18,5 +18,23 @@ mocks-debug:
 mocks:
 	mockery --config .mockery.yaml
 
+build:
+	go build -o main ./cmd
+
+lint:
+	golangci-lint run
+
 test: mocks
+	go test ./... -skip Integration
+
+test-all: mocks
 	go test ./...
+
+test-integration:
+	go test ./internal/storages/postgres
+
+test-skip-integration-pg:
+	go test ./internal/storages/postgres -skip-integration
+
+tidy:
+	go mod tidy

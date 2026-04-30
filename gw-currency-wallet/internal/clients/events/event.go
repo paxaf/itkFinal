@@ -3,9 +3,9 @@ package events
 import "time"
 
 const (
-	OperationTypeDeposit  = "deposit"
-	OperationTypeWithdraw = "withdraw"
-	OperationTypeExchange = "exchange"
+	OperationTypeDeposit  = "DEPOSIT"
+	OperationTypeWithdraw = "WITHDRAW"
+	OperationTypeExchange = "EXCHANGE"
 )
 
 type LargeOperationEvent struct {

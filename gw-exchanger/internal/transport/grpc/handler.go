@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/paxaf/itkFinal/gw-exchanger/internal/logger"
 	"github.com/paxaf/itkFinal/gw-exchanger/internal/usecase"
@@ -24,7 +25,7 @@ func NewHandler(usecase usecase.Exchanger, log *logger.Logger) *Handler {
 	}
 }
 
-func (h *Handler) GetExchangeRates(ctx context.Context, req *exchangegrpc.Empty) (*exchangegrpc.ExchangeRatesResponse, error) {
+func (h *Handler) GetExchangeRates(ctx context.Context, _ *exchangegrpc.Empty) (*exchangegrpc.ExchangeRatesResponse, error) {
 	res, err := h.usecase.GetRates(ctx)
 	if err != nil {
 		h.log.Error("failed to get exchange rates", map[string]interface{}{"error": err.Error()})
@@ -64,7 +65,7 @@ func (h *Handler) GetExchangeRateForCurrency(ctx context.Context, req *exchangeg
 		}
 	}
 	return &exchangegrpc.ExchangeRateResponse{
-		FromCurrency: from,
-		ToCurrency:   to,
+		FromCurrency: strings.ToUpper(strings.TrimSpace(from)),
+		ToCurrency:   strings.ToUpper(strings.TrimSpace(to)),
 		ExchangeRate: float32(res)}, nil
 }

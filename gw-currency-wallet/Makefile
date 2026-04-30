@@ -5,7 +5,7 @@ override export GO111MODULE := on
 override export USERPROFILE := $(WIN_USERPROFILE)
 override export LOCALAPPDATA := $(WIN_LOCALAPPDATA)
 
-.PHONY: build swagger mocks mocks-debug test test-all test-integration test-skip-integration-pg tidy test-debug
+.PHONY: build lint swagger mocks mocks-debug test test-all test-integration test-skip-integration-pg tidy test-debug
 
 test-debug:
 	which go
@@ -26,6 +26,9 @@ mocks:
 
 build:
 	go build -o main ./cmd
+
+lint:
+	golangci-lint run
 
 swagger:
 	go run github.com/swaggo/swag/cmd/swag@v1.8.12 init --dir ./cmd,./internal/transport/http --generalInfo main.go --output docs --parseInternal

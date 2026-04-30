@@ -11,12 +11,12 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-type MongoDB struct {
+type DB struct {
 	client     *mng.Client
 	collection *mng.Collection
 }
 
-func New(cfg config.Mongo) (*MongoDB, error) {
+func New(cfg config.Mongo) (*DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectTimeout())
 	defer cancel()
 	client, err := mng.Connect(options.Client().ApplyURI(cfg.ConnectionURI()))
@@ -37,7 +37,7 @@ func New(cfg config.Mongo) (*MongoDB, error) {
 		return nil, err
 	}
 
-	storage := &MongoDB{
+	storage := &DB{
 		client:     client,
 		collection: collection,
 	}
@@ -59,6 +59,6 @@ func createIndexes(ctx context.Context, collection *mng.Collection) error {
 	return nil
 }
 
-func (m *MongoDB) Close(ctx context.Context) error {
+func (m *DB) Close(ctx context.Context) error {
 	return m.client.Disconnect(ctx)
 }

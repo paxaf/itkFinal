@@ -1,27 +1,27 @@
-# gw-notification
+﻿# gw-notification
 
-`gw-notification` - сервис обработки событий о крупных денежных операциях.
+`gw-notification` - фоновый Kafka consumer для обработки крупных денежных операций. Он читает события из Kafka, валидирует их и сохраняет историю в MongoDB.
 
-Сервис читает события из Kafka, валидирует их, сохраняет историю крупных операций в MongoDB и подтверждает Kafka offset только после успешной обработки. Источником событий будет `gw-currency-wallet`: он отправляет в Kafka только операции, которые превышают заданный порог, например 30 000 RUB.
+## Что делает сервис
 
-## Назначение
+- Читает JSON-события из Kafka topic `wallet.large-operations`.
+- Обрабатывает сообщения микробатчами.
+- Валидирует каждое событие на уровне usecase.
+- Сохраняет валидные события в MongoDB.
+- Создаёт уникальный индекс по `event_id`, чтобы повторная доставка Kafka не создавала дубли.
+- Коммитит Kafka offset только после успешной обработки batch.
+- Логирует ошибки декодирования, ошибки обработки, результат batch и ошибки commit.
+- Корректно завершается по `SIGINT` и `SIGTERM`.
 
-- получать события крупных операций из Kafka topic;
-- обрабатывать сообщения микробатчами;
-- сохранять валидные события в MongoDB;
-- не создавать дубликаты при повторной доставке сообщений;
-- логировать обработку batch и ошибки;
-- корректно завершаться по `SIGINT` и `SIGTERM`.
-
-## Поток Данных
+## Поток данных
 
 ```text
-gw-currency-wallet -> Kafka topic -> gw-notification -> MongoDB
+gw-currency-wallet -> Kafka wallet.large-operations -> gw-notification -> MongoDB
 ```
 
-`gw-notification` не принимает HTTP или gRPC запросы. Это фоновый Kafka consumer.
+Сервис не принимает HTTP или gRPC запросы. Это отдельный фоновый consumer.
 
-## Контракт События
+## Контракт события
 
 Событие приходит в Kafka как JSON:
 
@@ -40,35 +40,44 @@ gw-currency-wallet -> Kafka topic -> gw-notification -> MongoDB
 Поля:
 
 - `event_id` - уникальный идентификатор события.
-- `user_id` - идентификатор пользователя.
-- `operation_type` - тип операции, например `DEPOSIT`, `WITHDRAW`, `EXCHANGE`.
-- `currency` - валюта исходной операции.
+- `user_id` - идентификатор пользователя из wallet.
+- `operation_type` - тип операции: `DEPOSIT`, `WITHDRAW`, `EXCHANGE`.
+- `currency` - исходная валюта операции.
 - `amount_minor` - сумма операции в minor units.
-- `amount_rub_minor` - сумма операции в рублях в minor units.
-- `created_at` - время создания события.
+- `amount_rub_minor` - сумма операции в RUB minor.
+- `created_at` - время создания события на стороне wallet.
 
-## Идемпотентность
+## Надёжность
 
-MongoDB collection получает уникальный индекс по полю `event_id`.
+Kafka даёт доставку как минимум один раз. Поэтому сервис должен быть идемпотентным.
 
-Если Kafka повторно доставит уже сохранённое событие, MongoDB вернет duplicate key error, а storage-слой обработает это как успешный результат. Это защищает сервис от дублей при повторной доставке сообщений или ошибках Kafka commit.
+Идемпотентность сделана через уникальный индекс MongoDB по `event_id`. Если Kafka повторно доставит уже сохранённое событие, MongoDB вернёт duplicate key error, а storage-слой обработает это как успешный результат.
 
-## Batch-Обработка
+Если сохранение batch в MongoDB завершилось ошибкой, Kafka offset не коммитится. Это позволяет обработать batch повторно после восстановления сервиса.
 
-Consumer собирает batch так:
+## Batch-обработка
 
-- ждёт первое сообщение;
-- после первого сообщения добирает batch до `KAFKA_BATCH_SIZE`;
-- если batch не успел заполниться, завершает добор по `KAFKA_BATCH_WAIT_MS`;
-- валидные события отправляет в usecase;
-- битый JSON логирует и пропускает;
-- после успешного сохранения подтверждает Kafka offset через commit.
+Consumer работает так:
 
-Если сохранение в MongoDB завершилось ошибкой, batch не подтверждается.
+```text
+получить первое сообщение
+        |
+        v
+добрать batch до KAFKA_BATCH_SIZE или до KAFKA_BATCH_WAIT_MS
+        |
+        v
+декодировать JSON
+        |
+        v
+валидные события отправить в usecase
+        |
+        v
+после успешного сохранения закоммитить Kafka offset
+```
+
+Битый JSON не валит весь batch: сообщение логируется как decode error и пропускается.
 
 ## Конфигурация
-
-Конфиг загружается из `config.env` и переменных окружения.
 
 Основные переменные:
 
@@ -81,8 +90,6 @@ KAFKA_MAX_BYTES=10485760
 KAFKA_MAX_WAIT_MS=500
 KAFKA_BATCH_SIZE=128
 KAFKA_BATCH_WAIT_MS=50
-
-MONGO_URI=
 MONGO_HOST=localhost
 MONGO_PORT=27017
 MONGO_USER=mongo
@@ -91,50 +98,42 @@ MONGO_AUTH_SOURCE=admin
 MONGO_DB=notification
 MONGO_COLLECTION=large_operations
 MONGO_CONNECT_TIMEOUT_MS=5000
-
 LOG_LEVEL=debug
 ```
 
-В Docker Compose сервисы должны обращаться к Kafka и MongoDB по именам сервисов, например:
+В Docker Compose сервис обращается к зависимостям по именам контейнеров:
 
-```env
-KAFKA_BROKERS=kafka:9092
-MONGO_HOST=notification-mongo
-```
+- Kafka: `kafka:9092`
+- MongoDB: `notification-mongo:27017`
 
-## Структура
-
-- `cmd` - точка входа.
-- `internal/app` - сборка приложения и graceful shutdown.
-- `internal/config` - загрузка и валидация конфигурации.
-- `internal/logger` - общий logger на zerolog.
-- `internal/domain` - доменная модель события.
-- `internal/usecase` - обработка и валидация событий.
-- `internal/storages` - интерфейсы хранилища.
-- `internal/storages/mongo` - MongoDB storage.
-- `internal/transport/kafka` - Kafka consumer.
-
-## Локальный Запуск
+## Локальный запуск
 
 ```shell
 go run ./cmd -c config.env
 ```
 
-Для полноценного запуска нужны доступные Kafka и MongoDB.
+Для запуска нужны доступные Kafka и MongoDB.
 
-## Тесты
+## Docker
 
-Unit-тесты без интеграции:
+Из корня репозитория:
 
 ```shell
+docker compose up --build gw-notification
+```
+
+У сервиса есть простой `entrypoint.sh`, который запускает переданную команду. Миграции не нужны, потому что MongoDB индекс создаётся приложением при подключении.
+
+## Тесты и моки
+
+Моки генерируются через `mockery` по конфигу `.mockery.yaml`.
+
+```shell
+make mocks
 make test
 ```
 
-Все тесты:
-
-```shell
-make test-all
-```
+`make test` сначала перегенерирует моки, затем запускает unit-тесты без интеграционных.
 
 Интеграционные тесты MongoDB:
 
@@ -142,14 +141,13 @@ make test-all
 make test-integration
 ```
 
-Интеграционные тесты автоматически пропускаются, если Docker недоступен. Также их можно явно пропустить:
+Если Docker недоступен, интеграционные тесты автоматически пропускаются.
+
+## Линтинг и сборка
 
 ```shell
-make test-skip-integration-mongo
-```
-
-## Сборка
-
-```shell
+make lint
 make build
 ```
+
+Линтер настроен через `.golangci.yml`; тестовые файлы линтером не проверяются.

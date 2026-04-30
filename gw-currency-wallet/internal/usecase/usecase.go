@@ -25,6 +25,10 @@ type TokenManager interface {
 	Generate(userID int64) (string, error)
 }
 
+type Logger interface {
+	Error(message interface{}, args ...interface{})
+}
+
 type LargeOperationPublisher interface {
 	PublishLargeOperation(ctx context.Context, event events.LargeOperationEvent) error
 }
@@ -70,6 +74,7 @@ type Service struct {
 	tokenManager TokenManager
 	exchanger    ExchangeProvider
 	publisher    LargeOperationPublisher
+	log          Logger
 
 	largeOperationThresholdRubMinor int64
 
@@ -85,6 +90,7 @@ func New(
 	exchanger ExchangeProvider,
 	publisher LargeOperationPublisher,
 	largeOperationThresholdRubMinor int64,
+	log Logger,
 ) *Service {
 	if largeOperationThresholdRubMinor <= 0 {
 		largeOperationThresholdRubMinor = defaultLargeOperationThresholdRubMinor
@@ -95,6 +101,7 @@ func New(
 		tokenManager:                    tokenManager,
 		exchanger:                       exchanger,
 		publisher:                       publisher,
+		log:                             log,
 		largeOperationThresholdRubMinor: largeOperationThresholdRubMinor,
 		ratesCacheTTL:                   defaultRatesCacheTTL,
 	}
@@ -292,6 +299,7 @@ func (s *Service) checkAndPublish(
 
 	amountRubMinor, err := s.amountRubMinor(ctx, currency, amountMinor)
 	if err != nil {
+		s.logLargeOperationCheckError(err, userID, operationType, currency, amountMinor)
 		return
 	}
 
@@ -299,7 +307,7 @@ func (s *Service) checkAndPublish(
 		return
 	}
 
-	_ = s.publisher.PublishLargeOperation(ctx, events.LargeOperationEvent{
+	event := events.LargeOperationEvent{
 		EventID:        uuid.NewString(),
 		UserID:         userID,
 		OperationType:  operationType,
@@ -307,6 +315,46 @@ func (s *Service) checkAndPublish(
 		AmountMinor:    amountMinor,
 		AmountRubMinor: amountRubMinor,
 		CreatedAt:      time.Now().UTC(),
+	}
+
+	if err = s.publisher.PublishLargeOperation(ctx, event); err != nil {
+		s.logPublishError(err, event)
+	}
+}
+
+func (s *Service) logPublishError(err error, event events.LargeOperationEvent) {
+	if s.log == nil {
+		return
+	}
+
+	s.log.Error("publish large operation failed", map[string]interface{}{
+		"error":            err.Error(),
+		"event_id":         event.EventID,
+		"user_id":          event.UserID,
+		"operation_type":   event.OperationType,
+		"currency":         event.Currency,
+		"amount_minor":     event.AmountMinor,
+		"amount_rub_minor": event.AmountRubMinor,
+	})
+}
+
+func (s *Service) logLargeOperationCheckError(
+	err error,
+	userID int64,
+	operationType string,
+	currency domain.Currency,
+	amountMinor int64,
+) {
+	if s.log == nil {
+		return
+	}
+
+	s.log.Error("check large operation failed", map[string]interface{}{
+		"error":          err.Error(),
+		"user_id":        userID,
+		"operation_type": operationType,
+		"currency":       string(currency),
+		"amount_minor":   amountMinor,
 	})
 }
 

@@ -49,9 +49,23 @@ func (s *EventSuite) TestLargeOperationEventValidateErrors() {
 			wantErr: ErrInvalidOperationType,
 		},
 		{
+			name: "unsupported operation type",
+			mutate: func(event *LargeOperationEvent) {
+				event.OperationType = "TRANSFER"
+			},
+			wantErr: ErrInvalidOperationType,
+		},
+		{
 			name: "empty currency",
 			mutate: func(event *LargeOperationEvent) {
 				event.Currency = " "
+			},
+			wantErr: ErrInvalidCurrency,
+		},
+		{
+			name: "unsupported currency",
+			mutate: func(event *LargeOperationEvent) {
+				event.Currency = "GBP"
 			},
 			wantErr: ErrInvalidCurrency,
 		},

@@ -20,7 +20,7 @@ type largeOperationDocument struct {
 	CreatedAt      time.Time `bson:"created_at"`
 }
 
-func (m *MongoDB) SaveLargeOperations(ctx context.Context, events []domain.LargeOperationEvent) error {
+func (m *DB) SaveLargeOperations(ctx context.Context, events []domain.LargeOperationEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -41,7 +41,7 @@ func (m *MongoDB) SaveLargeOperations(ctx context.Context, events []domain.Large
 	return nil
 }
 
-func (m *MongoDB) SaveLargeOperation(ctx context.Context, event domain.LargeOperationEvent) error {
+func (m *DB) SaveLargeOperation(ctx context.Context, event domain.LargeOperationEvent) error {
 	return m.SaveLargeOperations(ctx, []domain.LargeOperationEvent{event})
 }
 

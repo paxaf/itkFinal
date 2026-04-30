@@ -12,6 +12,7 @@ func main() {
 	}
 
 	if err := application.Run(); err != nil {
+		_ = application.Close()
 		logger.Fatal("run app: %v", err)
 	}
 

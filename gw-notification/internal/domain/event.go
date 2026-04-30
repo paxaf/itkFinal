@@ -15,6 +15,18 @@ var (
 	ErrInvalidCreatedAt     = errors.New("invalid created at")
 )
 
+var supportedOperationTypes = map[string]struct{}{
+	"DEPOSIT":  {},
+	"WITHDRAW": {},
+	"EXCHANGE": {},
+}
+
+var supportedCurrencies = map[string]struct{}{
+	"USD": {},
+	"RUB": {},
+	"EUR": {},
+}
+
 type LargeOperationEvent struct {
 	EventID        string    `json:"event_id"`
 	UserID         int64     `json:"user_id"`
@@ -32,10 +44,12 @@ func (e LargeOperationEvent) Validate() error {
 	if e.UserID <= 0 {
 		return ErrInvalidUserID
 	}
-	if strings.TrimSpace(e.OperationType) == "" {
+	operationType := strings.ToUpper(strings.TrimSpace(e.OperationType))
+	if _, ok := supportedOperationTypes[operationType]; !ok {
 		return ErrInvalidOperationType
 	}
-	if strings.TrimSpace(e.Currency) == "" {
+	currency := strings.ToUpper(strings.TrimSpace(e.Currency))
+	if _, ok := supportedCurrencies[currency]; !ok {
 		return ErrInvalidCurrency
 	}
 	if e.AmountMinor <= 0 {

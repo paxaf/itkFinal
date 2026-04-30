@@ -15,14 +15,14 @@ import (
 )
 
 type Consumer struct {
-	reader    reader
+	reader    Reader
 	handler   usecase.LargeOperationHandler
 	log       logger.Interface
 	batchSize int
 	batchWait time.Duration
 }
 
-type reader interface {
+type Reader interface {
 	FetchMessage(ctx context.Context) (kafkago.Message, error)
 	CommitMessages(ctx context.Context, msgs ...kafkago.Message) error
 	Close() error
@@ -79,10 +79,6 @@ func (c *Consumer) Run(ctx context.Context) error {
 			continue
 		}
 	}
-}
-
-func (c *Consumer) handleMessage(ctx context.Context, msg kafkago.Message) error {
-	return c.handleMessages(ctx, []kafkago.Message{msg})
 }
 
 func (c *Consumer) handleMessages(ctx context.Context, messages []kafkago.Message) error {

@@ -30,7 +30,6 @@ type App struct {
 	log      logger.Interface
 	storage  storages.Storage
 	consumer consumer
-	path     string
 }
 
 var configPathFlag = flag.String("c", config.DefaultConfigPath, "path to config env file")
@@ -69,7 +68,6 @@ func New() (*App, error) {
 		log:      log,
 		storage:  storage,
 		consumer: consumer,
-		path:     configPath,
 	}, nil
 }
 

@@ -24,6 +24,7 @@ type UseCaseSuite struct {
 	tokens    *usecasemocks.TokenManagerMock
 	exchanger *usecasemocks.ExchangeProviderMock
 	publisher *usecasemocks.LargeOperationPublisherMock
+	log       *usecasemocks.LoggerMock
 	service   *Service
 }
 
@@ -37,7 +38,8 @@ func (s *UseCaseSuite) SetupTest() {
 	s.tokens = usecasemocks.NewTokenManagerMock(s.T())
 	s.exchanger = usecasemocks.NewExchangeProviderMock(s.T())
 	s.publisher = usecasemocks.NewLargeOperationPublisherMock(s.T())
-	s.service = New(s.storage, s.tokens, s.exchanger, nil, 3000000)
+	s.log = usecasemocks.NewLoggerMock(s.T())
+	s.service = New(s.storage, s.tokens, s.exchanger, nil, 3000000, nil)
 }
 
 func (s *UseCaseSuite) TestRegisterHashesPasswordAndCreatesUser() {
@@ -222,8 +224,18 @@ func (s *UseCaseSuite) TestDepositSkipsSmallOperation() {
 
 func (s *UseCaseSuite) TestDepositIgnoresPublishError() {
 	s.service.publisher = s.publisher
+	s.service.log = s.log
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
 	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.AnythingOfType("events.LargeOperationEvent")).Return(errBoom).Once()
+	s.log.EXPECT().Error("publish large operation failed", mock.MatchedBy(func(fields map[string]interface{}) bool {
+		return fields["error"] == errBoom.Error() &&
+			fields["event_id"] != "" &&
+			fields["user_id"] == int64(1) &&
+			fields["operation_type"] == events.OperationTypeDeposit &&
+			fields["currency"] == "RUB" &&
+			fields["amount_minor"] == int64(3000000) &&
+			fields["amount_rub_minor"] == int64(3000000)
+	})).Once()
 
 	_, err := s.service.Deposit(s.ctx, 1, "rub", 3000000)
 

@@ -22,7 +22,7 @@ type MongoIntegrationSuite struct {
 
 	ctx       context.Context
 	container *tcmongodb.MongoDBContainer
-	storage   *MongoDB
+	storage   *DB
 }
 
 func TestMongoIntegrationSuite(t *testing.T) {

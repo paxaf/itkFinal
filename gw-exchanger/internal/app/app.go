@@ -26,7 +26,6 @@ type App struct {
 	log        *logger.Logger
 	storage    storages.Storage
 	grpcServer *grpc.Server
-	path       string
 }
 
 var configPathFlag = flag.String("c", config.DefaultConfigPath, "path to config env file")
@@ -61,7 +60,6 @@ func New() (*App, error) {
 		log:        log,
 		storage:    pool,
 		grpcServer: grpcServer,
-		path:       configPath,
 	}, nil
 }
 

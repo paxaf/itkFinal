@@ -1,0 +1,41 @@
+with-expecter: true
+issue-845-fix: true
+resolve-type-alias: false
+disable-version-string: true
+
+packages:
+  github.com/paxaf/itkFinal/gw-notification/internal/storages:
+    config:
+      dir: internal/mocks/storages
+      outpkg: storagesmocks
+      filename: storage_mock.go
+      mockname: StorageMock
+    interfaces:
+      Storage: {}
+
+  github.com/paxaf/itkFinal/gw-notification/internal/usecase:
+    config:
+      dir: internal/mocks/usecase
+      outpkg: usecasemocks
+      filename: large_operation_handler_mock.go
+      mockname: LargeOperationHandlerMock
+    interfaces:
+      LargeOperationHandler: {}
+
+  github.com/paxaf/itkFinal/gw-notification/internal/transport/kafka:
+    config:
+      dir: internal/mocks/transport/kafka
+      outpkg: kafkamocks
+      filename: reader_mock.go
+      mockname: ReaderMock
+    interfaces:
+      Reader: {}
+
+  github.com/paxaf/itkFinal/gw-notification/internal/logger:
+    config:
+      dir: internal/mocks/logger
+      outpkg: loggermocks
+      filename: logger_mock.go
+      mockname: LoggerMock
+    interfaces:
+      Interface: {}

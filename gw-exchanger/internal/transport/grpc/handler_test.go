@@ -65,12 +65,12 @@ func (s *HandlerSuite) TestGetExchangeRatesReturnsInternalOnUsecaseError() {
 
 func (s *HandlerSuite) TestGetExchangeRateForCurrencySuccess() {
 	s.exchanger.EXPECT().
-		GetRate(mock.Anything, "USD", "EUR").
+		GetRate(mock.Anything, " usd ", "eur").
 		Return(0.92, nil)
 
 	resp, err := s.handler.GetExchangeRateForCurrency(s.ctx, &exchangegrpc.CurrencyRequest{
-		FromCurrency: "USD",
-		ToCurrency:   "EUR",
+		FromCurrency: " usd ",
+		ToCurrency:   "eur",
 	})
 
 	s.Require().NoError(err)

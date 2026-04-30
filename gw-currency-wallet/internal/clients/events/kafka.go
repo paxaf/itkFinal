@@ -12,7 +12,6 @@ import (
 
 type KafkaPublisher struct {
 	writer               *kafka.Writer
-	operationsTopic      string
 	largeOperationsTopic string
 }
 
@@ -29,7 +28,6 @@ func New(ctx context.Context, cfg config.Kafka) (*KafkaPublisher, error) {
 
 	return &KafkaPublisher{
 		writer:               writer,
-		operationsTopic:      cfg.OperationsTopic,
 		largeOperationsTopic: cfg.LargeOperationsTopic,
 	}, nil
 }

@@ -42,5 +42,8 @@ func (s *PgPool) GetRates(ctx context.Context) (map[string]float64, error) {
 		}
 		rates[currencyCode] = unitsPerUSD
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rates: %w", err)
+	}
 	return rates, nil
 }

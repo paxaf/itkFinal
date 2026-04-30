@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/paxaf/itkFinal/gw-notification/internal/domain"
+	storagesmocks "github.com/paxaf/itkFinal/gw-notification/internal/mocks/storages"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -16,7 +18,7 @@ type UseCaseSuite struct {
 	suite.Suite
 
 	ctx     context.Context
-	storage *fakeStorage
+	storage *storagesmocks.StorageMock
 	service *Service
 }
 
@@ -26,12 +28,13 @@ func TestUseCaseSuite(t *testing.T) {
 
 func (s *UseCaseSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.storage = &fakeStorage{}
+	s.storage = storagesmocks.NewStorageMock(s.T())
 	s.service = New(s.storage)
 }
 
 func (s *UseCaseSuite) TestHandleLargeOperation() {
 	event := validEvent("event-1")
+	s.storage.EXPECT().SaveLargeOperations(s.ctx, []domain.LargeOperationEvent{event}).Return(nil).Once()
 
 	result, err := s.service.HandleLargeOperation(s.ctx, event)
 
@@ -42,7 +45,6 @@ func (s *UseCaseSuite) TestHandleLargeOperation() {
 		Invalid:  0,
 		Accepted: 1,
 	}, result)
-	s.Require().Equal([]domain.LargeOperationEvent{event}, s.storage.savedEvents)
 }
 
 func (s *UseCaseSuite) TestHandleLargeOperationsFiltersInvalidEvents() {
@@ -51,6 +53,8 @@ func (s *UseCaseSuite) TestHandleLargeOperationsFiltersInvalidEvents() {
 	invalidUser.UserID = 0
 	invalidAmount := validEvent("event-3")
 	invalidAmount.AmountMinor = 0
+
+	s.storage.EXPECT().SaveLargeOperations(s.ctx, []domain.LargeOperationEvent{valid}).Return(nil).Once()
 
 	result, err := s.service.HandleLargeOperations(s.ctx, []domain.LargeOperationEvent{
 		valid,
@@ -65,7 +69,6 @@ func (s *UseCaseSuite) TestHandleLargeOperationsFiltersInvalidEvents() {
 		Invalid:  2,
 		Accepted: 1,
 	}, result)
-	s.Require().Equal([]domain.LargeOperationEvent{valid}, s.storage.savedEvents)
 }
 
 func (s *UseCaseSuite) TestHandleLargeOperationsSkipsStorageWhenAllEventsInvalid() {
@@ -81,12 +84,13 @@ func (s *UseCaseSuite) TestHandleLargeOperationsSkipsStorageWhenAllEventsInvalid
 		Invalid:  1,
 		Accepted: 0,
 	}, result)
-	s.Require().False(s.storage.saveManyCalled)
 }
 
 func (s *UseCaseSuite) TestHandleLargeOperationsReturnsStorageError() {
-	s.storage.saveManyErr = errBoom
 	event := validEvent("event-1")
+	s.storage.EXPECT().SaveLargeOperations(s.ctx, mock.MatchedBy(func(events []domain.LargeOperationEvent) bool {
+		return len(events) == 1 && events[0] == event
+	})).Return(errBoom).Once()
 
 	result, err := s.service.HandleLargeOperations(s.ctx, []domain.LargeOperationEvent{event})
 
@@ -97,26 +101,6 @@ func (s *UseCaseSuite) TestHandleLargeOperationsReturnsStorageError() {
 		Invalid:  0,
 		Accepted: 0,
 	}, result)
-}
-
-type fakeStorage struct {
-	savedEvents    []domain.LargeOperationEvent
-	saveManyErr    error
-	saveManyCalled bool
-}
-
-func (f *fakeStorage) SaveLargeOperations(ctx context.Context, events []domain.LargeOperationEvent) error {
-	f.saveManyCalled = true
-	f.savedEvents = append([]domain.LargeOperationEvent(nil), events...)
-	return f.saveManyErr
-}
-
-func (f *fakeStorage) SaveLargeOperation(ctx context.Context, event domain.LargeOperationEvent) error {
-	return f.SaveLargeOperations(ctx, []domain.LargeOperationEvent{event})
-}
-
-func (f *fakeStorage) Close(ctx context.Context) error {
-	return nil
 }
 
 func validEvent(eventID string) domain.LargeOperationEvent {

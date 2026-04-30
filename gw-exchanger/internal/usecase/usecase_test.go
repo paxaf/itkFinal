@@ -48,6 +48,18 @@ func TestServiceGetRateInvalidFromCurrency(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidCurrency)
 }
 
+func TestServiceGetRateUnsupportedCurrency(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := storagesmocks.NewStorageMock(t)
+	svc := New(storage)
+
+	_, err := svc.GetRate(ctx, "GBP", "RUB")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidCurrency)
+}
+
 func TestServiceGetRateInvalidToCurrency(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +105,42 @@ func TestServiceGetRatesSuccess(t *testing.T) {
 	rates, err := svc.GetRates(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expected, rates)
+}
+
+func TestServiceGetRatesUnsupportedCurrency(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := storagesmocks.NewStorageMock(t)
+	storage.EXPECT().GetRates(mock.Anything).Return(map[string]float64{
+		"USD": 1,
+		"RUB": 90,
+		"EUR": 0.92,
+		"GBP": 0.79,
+	}, nil).Once()
+
+	svc := New(storage)
+
+	_, err := svc.GetRates(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidCurrency)
+}
+
+func TestServiceGetRatesMissingCurrency(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := storagesmocks.NewStorageMock(t)
+	storage.EXPECT().GetRates(mock.Anything).Return(map[string]float64{
+		"USD": 1,
+		"RUB": 90,
+	}, nil).Once()
+
+	svc := New(storage)
+
+	_, err := svc.GetRates(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidCurrency)
 }
 
 func TestServiceGetRatesStorageError(t *testing.T) {

@@ -2,7 +2,7 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /src
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
@@ -17,5 +17,9 @@ RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /out/main ./main
 COPY config.env ./config.env
+COPY entrypoint.sh ./entrypoint.sh
 
+RUN chmod +x ./entrypoint.sh
+
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["./main", "-c", "config.env"]

@@ -23,6 +23,10 @@ packages:
         config:
           filename: token_manager_mock.go
           mockname: TokenManagerMock
+      Logger:
+        config:
+          filename: logger_mock.go
+          mockname: LoggerMock
       ExchangeProvider:
         config:
           filename: exchange_provider_mock.go

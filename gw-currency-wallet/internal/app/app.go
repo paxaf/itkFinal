@@ -37,7 +37,6 @@ type App struct {
 	exchanger  *exchangerClient.Client
 	publisher  *eventClient.KafkaPublisher
 	server     *http.Server
-	path       string
 }
 
 var configPathFlag = flag.String("c", config.DefaultConfigPath, "path to config env file")
@@ -83,6 +82,7 @@ func New() (*App, error) {
 		exchanger,
 		publisher,
 		cfg.Kafka.LargeOperationThresholdRubMinor,
+		log,
 	)
 
 	handler := walletHTTP.NewHandler(walletUC, tokenManager, log)
@@ -109,7 +109,6 @@ func New() (*App, error) {
 		exchanger:  exchanger,
 		publisher:  publisher,
 		server:     server,
-		path:       configPath,
 	}, nil
 }
 
