@@ -15,11 +15,17 @@ import (
 )
 
 type Consumer struct {
-	reader    *kafkago.Reader
+	reader    reader
 	handler   usecase.LargeOperationHandler
 	log       logger.Interface
 	batchSize int
 	batchWait time.Duration
+}
+
+type reader interface {
+	FetchMessage(ctx context.Context) (kafkago.Message, error)
+	CommitMessages(ctx context.Context, msgs ...kafkago.Message) error
+	Close() error
 }
 
 func New(cfg config.Kafka, handler usecase.LargeOperationHandler, log logger.Interface) *Consumer {
