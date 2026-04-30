@@ -150,6 +150,7 @@ func (s *HandlerSuite) TestDepositBadAmount() {
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.999,"currency":"USD"}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+	s.Require().JSONEq(`{"error":"Invalid amount or currency"}`, resp.Body.String())
 }
 
 func (s *HandlerSuite) TestDepositUsecaseError() {
@@ -160,6 +161,7 @@ func (s *HandlerSuite) TestDepositUsecaseError() {
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.50,"currency":"GBP"}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+	s.Require().JSONEq(`{"error":"Invalid amount or currency"}`, resp.Body.String())
 }
 
 func (s *HandlerSuite) TestWithdrawInsufficientFunds() {
@@ -170,6 +172,7 @@ func (s *HandlerSuite) TestWithdrawInsufficientFunds() {
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/withdraw", `{"amount":100.50,"currency":"USD"}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+	s.Require().JSONEq(`{"error":"Insufficient funds or invalid amount"}`, resp.Body.String())
 }
 
 func (s *HandlerSuite) TestWithdrawSuccess() {
@@ -226,6 +229,7 @@ func (s *HandlerSuite) TestExchangeBadCurrency() {
 	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"GBP","to_currency":"EUR","amount":100}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+	s.Require().JSONEq(`{"error":"Insufficient funds or invalid currencies"}`, resp.Body.String())
 }
 
 func (s *HandlerSuite) TestExchangeBadAmount() {
@@ -242,6 +246,7 @@ func (s *HandlerSuite) TestExchangeInsufficientFunds() {
 	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"USD","to_currency":"EUR","amount":100}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
+	s.Require().JSONEq(`{"error":"Insufficient funds or invalid currencies"}`, resp.Body.String())
 }
 
 func (s *HandlerSuite) TestInternalErrorBranch() {

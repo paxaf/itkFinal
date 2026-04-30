@@ -4,7 +4,7 @@
     ],
     "swagger": "2.0",
     "info": {
-        "description": "HTTP API for registration, JWT authorization, balances, deposits, withdrawals and currency exchange.",
+        "description": "HTTP API для регистрации, авторизации, балансов, пополнения, вывода средств и обмена валют.",
         "title": "Currency Wallet API",
         "contact": {},
         "version": "0.1.0"
@@ -24,7 +24,7 @@
                 "tags": [
                     "wallet"
                 ],
-                "summary": "Get user balances",
+                "summary": "Получение баланса пользователя",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -63,10 +63,10 @@
                 "tags": [
                     "exchange"
                 ],
-                "summary": "Exchange money between currencies",
+                "summary": "Обмен валют",
                 "parameters": [
                     {
-                        "description": "Exchange request",
+                        "description": "Данные обмена",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -116,7 +116,7 @@
                 "tags": [
                     "exchange"
                 ],
-                "summary": "Get exchange rates",
+                "summary": "Получение курсов валют",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -147,7 +147,7 @@
                 "tags": [
                     "health"
                 ],
-                "summary": "Check service health",
+                "summary": "Проверка состояния сервиса",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -169,10 +169,10 @@
                 "tags": [
                     "auth"
                 ],
-                "summary": "Login and receive JWT token",
+                "summary": "Авторизация пользователя",
                 "parameters": [
                     {
-                        "description": "Login request",
+                        "description": "Данные авторизации",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -214,10 +214,10 @@
                 "tags": [
                     "auth"
                 ],
-                "summary": "Register a user",
+                "summary": "Регистрация пользователя",
                 "parameters": [
                     {
-                        "description": "Register request",
+                        "description": "Данные регистрации",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -258,10 +258,10 @@
                 "tags": [
                     "wallet"
                 ],
-                "summary": "Deposit money to wallet",
+                "summary": "Пополнение кошелька",
                 "parameters": [
                     {
-                        "description": "Deposit request",
+                        "description": "Данные пополнения",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -308,10 +308,10 @@
                 "tags": [
                     "wallet"
                 ],
-                "summary": "Withdraw money from wallet",
+                "summary": "Вывод средств",
                 "parameters": [
                     {
-                        "description": "Withdraw request",
+                        "description": "Данные вывода средств",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -514,7 +514,7 @@
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type \"Bearer\" followed by a space and JWT token.",
+            "description": "Введите \"Bearer\", пробел и JWT-токен.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

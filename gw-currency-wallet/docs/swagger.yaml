@@ -117,8 +117,8 @@ definitions:
     type: object
 info:
   contact: {}
-  description: HTTP API for registration, JWT authorization, balances, deposits, withdrawals
-    and currency exchange.
+  description: HTTP API для регистрации, авторизации, балансов, пополнения, вывода
+    средств и обмена валют.
   title: Currency Wallet API
   version: 0.1.0
 paths:
@@ -141,7 +141,7 @@ paths:
             $ref: '#/definitions/http.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Get user balances
+      summary: Получение баланса пользователя
       tags:
       - wallet
   /exchange:
@@ -149,7 +149,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Exchange request
+      - description: Данные обмена
         in: body
         name: request
         required: true
@@ -176,7 +176,7 @@ paths:
             $ref: '#/definitions/http.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Exchange money between currencies
+      summary: Обмен валют
       tags:
       - exchange
   /exchange/rates:
@@ -198,7 +198,7 @@ paths:
             $ref: '#/definitions/http.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Get exchange rates
+      summary: Получение курсов валют
       tags:
       - exchange
   /health:
@@ -210,7 +210,7 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/http.HealthResponse'
-      summary: Check service health
+      summary: Проверка состояния сервиса
       tags:
       - health
   /login:
@@ -218,7 +218,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Login request
+      - description: Данные авторизации
         in: body
         name: request
         required: true
@@ -239,7 +239,7 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/http.ErrorResponse'
-      summary: Login and receive JWT token
+      summary: Авторизация пользователя
       tags:
       - auth
   /register:
@@ -247,7 +247,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Register request
+      - description: Данные регистрации
         in: body
         name: request
         required: true
@@ -264,7 +264,7 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/http.ErrorResponse'
-      summary: Register a user
+      summary: Регистрация пользователя
       tags:
       - auth
   /wallet/deposit:
@@ -272,7 +272,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Deposit request
+      - description: Данные пополнения
         in: body
         name: request
         required: true
@@ -295,7 +295,7 @@ paths:
             $ref: '#/definitions/http.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Deposit money to wallet
+      summary: Пополнение кошелька
       tags:
       - wallet
   /wallet/withdraw:
@@ -303,7 +303,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Withdraw request
+      - description: Данные вывода средств
         in: body
         name: request
         required: true
@@ -326,14 +326,14 @@ paths:
             $ref: '#/definitions/http.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Withdraw money from wallet
+      summary: Вывод средств
       tags:
       - wallet
 schemes:
 - http
 securityDefinitions:
   BearerAuth:
-    description: Type "Bearer" followed by a space and JWT token.
+    description: Введите "Bearer", пробел и JWT-токен.
     in: header
     name: Authorization
     type: apiKey

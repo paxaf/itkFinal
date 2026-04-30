@@ -112,7 +112,7 @@ func NewHandler(uc usecase.UseCase, tokenParser TokenParser, log logger.Interfac
 }
 
 // Health godoc
-// @Summary Check service health
+// @Summary Проверка состояния сервиса
 // @Tags health
 // @Produce json
 // @Success 200 {object} HealthResponse
@@ -123,11 +123,11 @@ func (h *Handler) Health(c *gin.Context) {
 }
 
 // Register godoc
-// @Summary Register a user
+// @Summary Регистрация пользователя
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Param request body RegisterRequest true "Register request"
+// @Param request body RegisterRequest true "Данные регистрации"
 // @Success 201 {object} MessageResponse
 // @Failure 400 {object} ErrorResponse
 // @Router /register [post]
@@ -153,11 +153,11 @@ func (h *Handler) Register(c *gin.Context) {
 }
 
 // Login godoc
-// @Summary Login and receive JWT token
+// @Summary Авторизация пользователя
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Param request body LoginRequest true "Login request"
+// @Param request body LoginRequest true "Данные авторизации"
 // @Success 200 {object} LoginResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -183,7 +183,7 @@ func (h *Handler) Login(c *gin.Context) {
 }
 
 // GetBalance godoc
-// @Summary Get user balances
+// @Summary Получение баланса пользователя
 // @Tags wallet
 // @Produce json
 // @Security BearerAuth
@@ -210,12 +210,12 @@ func (h *Handler) GetBalance(c *gin.Context) {
 }
 
 // Deposit godoc
-// @Summary Deposit money to wallet
+// @Summary Пополнение кошелька
 // @Tags wallet
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body MoneyOperationRequest true "Deposit request"
+// @Param request body MoneyOperationRequest true "Данные пополнения"
 // @Success 200 {object} NewBalanceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -262,12 +262,12 @@ func (h *Handler) Deposit(c *gin.Context) {
 }
 
 // Withdraw godoc
-// @Summary Withdraw money from wallet
+// @Summary Вывод средств
 // @Tags wallet
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body MoneyOperationRequest true "Withdraw request"
+// @Param request body MoneyOperationRequest true "Данные вывода средств"
 // @Success 200 {object} NewBalanceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -314,7 +314,7 @@ func (h *Handler) Withdraw(c *gin.Context) {
 }
 
 // GetExchangeRates godoc
-// @Summary Get exchange rates
+// @Summary Получение курсов валют
 // @Tags exchange
 // @Produce json
 // @Security BearerAuth
@@ -341,12 +341,12 @@ func (h *Handler) GetExchangeRates(c *gin.Context) {
 }
 
 // Exchange godoc
-// @Summary Exchange money between currencies
+// @Summary Обмен валют
 // @Tags exchange
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body ExchangeRequest true "Exchange request"
+// @Param request body ExchangeRequest true "Данные обмена"
 // @Success 200 {object} ExchangeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -457,6 +457,15 @@ func (h *Handler) writeError(c *gin.Context, action string, err error, fields ..
 		errors.Is(err, domain.ErrConvertedAmountTooSmall):
 		status = stdhttp.StatusBadRequest
 		message = "bad request"
+		if action == "deposit" && (errors.Is(err, domain.ErrInvalidAmount) || errors.Is(err, domain.ErrInvalidCurrency)) {
+			message = "Invalid amount or currency"
+		}
+		if action == "withdraw" && errors.Is(err, domain.ErrInvalidAmount) {
+			message = "Insufficient funds or invalid amount"
+		}
+		if action == "exchange" && (errors.Is(err, domain.ErrInvalidCurrency) || errors.Is(err, domain.ErrSameCurrency)) {
+			message = "Insufficient funds or invalid currencies"
+		}
 	case errors.Is(err, storages.ErrDuplicateUser):
 		status = stdhttp.StatusBadRequest
 		message = "Username or email already exists"
@@ -469,6 +478,9 @@ func (h *Handler) writeError(c *gin.Context, action string, err error, fields ..
 	case errors.Is(err, domain.ErrInsufficientFunds):
 		status = stdhttp.StatusBadRequest
 		message = "Insufficient funds or invalid amount"
+		if action == "exchange" {
+			message = "Insufficient funds or invalid currencies"
+		}
 	case errors.Is(err, domain.ErrExchangeRateUnavailable):
 		status = stdhttp.StatusInternalServerError
 		message = "Failed to retrieve exchange rates"

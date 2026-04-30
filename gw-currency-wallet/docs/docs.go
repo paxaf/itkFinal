@@ -29,7 +29,7 @@ const docTemplate = `{
                 "tags": [
                     "wallet"
                 ],
-                "summary": "Get user balances",
+                "summary": "Получение баланса пользователя",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -68,10 +68,10 @@ const docTemplate = `{
                 "tags": [
                     "exchange"
                 ],
-                "summary": "Exchange money between currencies",
+                "summary": "Обмен валют",
                 "parameters": [
                     {
-                        "description": "Exchange request",
+                        "description": "Данные обмена",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -121,7 +121,7 @@ const docTemplate = `{
                 "tags": [
                     "exchange"
                 ],
-                "summary": "Get exchange rates",
+                "summary": "Получение курсов валют",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -152,7 +152,7 @@ const docTemplate = `{
                 "tags": [
                     "health"
                 ],
-                "summary": "Check service health",
+                "summary": "Проверка состояния сервиса",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -174,10 +174,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Login and receive JWT token",
+                "summary": "Авторизация пользователя",
                 "parameters": [
                     {
-                        "description": "Login request",
+                        "description": "Данные авторизации",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -219,10 +219,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Register a user",
+                "summary": "Регистрация пользователя",
                 "parameters": [
                     {
-                        "description": "Register request",
+                        "description": "Данные регистрации",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -263,10 +263,10 @@ const docTemplate = `{
                 "tags": [
                     "wallet"
                 ],
-                "summary": "Deposit money to wallet",
+                "summary": "Пополнение кошелька",
                 "parameters": [
                     {
-                        "description": "Deposit request",
+                        "description": "Данные пополнения",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -313,10 +313,10 @@ const docTemplate = `{
                 "tags": [
                     "wallet"
                 ],
-                "summary": "Withdraw money from wallet",
+                "summary": "Вывод средств",
                 "parameters": [
                     {
-                        "description": "Withdraw request",
+                        "description": "Данные вывода средств",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -519,7 +519,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type \"Bearer\" followed by a space and JWT token.",
+            "description": "Введите \"Bearer\", пробел и JWT-токен.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
@@ -534,7 +534,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{"http"},
 	Title:            "Currency Wallet API",
-	Description:      "HTTP API for registration, JWT authorization, balances, deposits, withdrawals and currency exchange.",
+	Description:      "HTTP API для регистрации, авторизации, балансов, пополнения, вывода средств и обмена валют.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages"
@@ -230,6 +231,7 @@ func (s *UseCaseSuite) TestGetExchangeRates() {
 
 	s.Require().NoError(err)
 	s.Require().Equal(float64(0.92), rates["EUR"])
+	s.Require().Equal(1, s.exchanger.getRatesCalls)
 }
 
 func (s *UseCaseSuite) TestGetExchangeRatesErrors() {
@@ -248,6 +250,10 @@ func (s *UseCaseSuite) TestGetExchangeRatesErrors() {
 	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
 
 	s.exchanger.rates = map[string]float64{"USD": 0}
+	_, err = s.service.GetExchangeRates(s.ctx)
+	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
+
+	s.exchanger.rates = map[string]float64{"USD": 1}
 	_, err = s.service.GetExchangeRates(s.ctx)
 	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 }
@@ -273,6 +279,57 @@ func (s *UseCaseSuite) TestExchangeConvertsAndStoresAtomically() {
 	s.Require().NoError(err)
 	s.Require().Equal(int64(9200), result.ExchangedAmountMinor)
 	s.Require().Equal(int64(9200), result.NewBalance["EUR"])
+	s.Require().Equal(1, s.exchanger.getRateCalls)
+}
+
+func (s *UseCaseSuite) TestExchangeUsesCachedRatesAfterGetExchangeRates() {
+	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
+	_, err := s.service.GetExchangeRates(s.ctx)
+	s.Require().NoError(err)
+
+	s.exchanger.err = errBoom
+	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
+		s.Require().Equal(int64(9200), toAmountMinor)
+		return map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0}, nil
+	}
+
+	result, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{
+		UserID:       1,
+		FromCurrency: domain.CurrencyUSD,
+		ToCurrency:   domain.CurrencyEUR,
+		AmountMinor:  10000,
+	})
+
+	s.Require().NoError(err)
+	s.Require().Equal(int64(9200), result.ExchangedAmountMinor)
+	s.Require().Zero(s.exchanger.getRateCalls)
+}
+
+func (s *UseCaseSuite) TestExchangeRefreshesExpiredRatesCache() {
+	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
+	_, err := s.service.GetExchangeRates(s.ctx)
+	s.Require().NoError(err)
+
+	s.service.ratesCacheMu.Lock()
+	s.service.ratesCachedAt = time.Now().Add(-time.Minute)
+	s.service.ratesCacheMu.Unlock()
+
+	s.exchanger.rate = 0.5
+	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
+		s.Require().Equal(int64(5000), toAmountMinor)
+		return map[string]int64{"USD": 5000, "EUR": 5000, "RUB": 0}, nil
+	}
+
+	result, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{
+		UserID:       1,
+		FromCurrency: domain.CurrencyUSD,
+		ToCurrency:   domain.CurrencyEUR,
+		AmountMinor:  10000,
+	})
+
+	s.Require().NoError(err)
+	s.Require().Equal(int64(5000), result.ExchangedAmountMinor)
+	s.Require().Equal(1, s.exchanger.getRateCalls)
 }
 
 func (s *UseCaseSuite) TestExchangeErrors() {
@@ -356,12 +413,15 @@ func (f *fakeTokenManager) Generate(userID int64) (string, error) {
 }
 
 type fakeExchanger struct {
-	rates map[string]float64
-	rate  float64
-	err   error
+	rates         map[string]float64
+	rate          float64
+	err           error
+	getRatesCalls int
+	getRateCalls  int
 }
 
 func (f *fakeExchanger) GetRates(ctx context.Context) (map[string]float64, error) {
+	f.getRatesCalls++
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -369,6 +429,7 @@ func (f *fakeExchanger) GetRates(ctx context.Context) (map[string]float64, error
 }
 
 func (f *fakeExchanger) GetRate(ctx context.Context, fromCurrency string, toCurrency string) (float64, error) {
+	f.getRateCalls++
 	if f.err != nil {
 		return 0, f.err
 	}

@@ -21,6 +21,7 @@ COPY --from=builder /out/main ./main
 COPY --from=builder /out/goose /usr/local/bin/goose
 COPY config.env ./config.env
 COPY migrations ./migrations
+COPY docs ./docs
 COPY entrypoint.sh ./entrypoint.sh
 
 RUN chmod +x ./entrypoint.sh
