@@ -200,30 +200,6 @@ func (s *UseCaseSuite) TestWithdrawSuccessAndErrors() {
 	s.Require().ErrorIs(err, domain.ErrInvalidAmount)
 }
 
-func (s *UseCaseSuite) TestWalletOperation() {
-	err := s.service.WalletOperation(s.ctx, domain.WalletOperation{
-		UserID:        1,
-		Currency:      domain.CurrencyUSD,
-		OperationType: domain.OperationDeposit,
-		AmountMinor:   100,
-	})
-	s.Require().NoError(err)
-	s.Require().Equal(int64(1), s.storage.enqueuedUserID)
-	s.Require().NotEmpty(s.storage.enqueuedOperationID)
-
-	err = s.service.WalletOperation(s.ctx, domain.WalletOperation{})
-	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
-
-	s.storage.enqueueErr = errBoom
-	err = s.service.WalletOperation(s.ctx, domain.WalletOperation{
-		UserID:        1,
-		Currency:      domain.CurrencyUSD,
-		OperationType: domain.OperationDeposit,
-		AmountMinor:   100,
-	})
-	s.Require().ErrorIs(err, errBoom)
-}
-
 func (s *UseCaseSuite) TestGetExchangeRates() {
 	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
 
@@ -370,37 +346,6 @@ func (s *UseCaseSuite) TestExchangeErrors() {
 	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
 }
 
-func (s *UseCaseSuite) TestProcessorService() {
-	processor := NewProcessor(s.storage, ProcessorConfig{})
-	s.storage.pendingWallets = []string{"1:USD"}
-
-	wallets, err := processor.ListPendingWallets(s.ctx, 10)
-	s.Require().NoError(err)
-	s.Require().Equal([]string{"1:USD"}, wallets)
-
-	err = processor.ProcessWallet(s.ctx, "1:USD")
-	s.Require().NoError(err)
-	s.Require().Equal("1:USD", s.storage.processedWalletKey)
-	s.Require().Equal(128, s.storage.processedBatchSize)
-}
-
-func (s *UseCaseSuite) TestProcessorServiceErrors() {
-	processor := NewProcessor(s.storage, ProcessorConfig{BatchSize: 7})
-	canceledCtx, cancel := context.WithCancel(s.ctx)
-	cancel()
-
-	_, err := processor.ListPendingWallets(canceledCtx, 10)
-	s.Require().ErrorIs(err, context.Canceled)
-
-	err = processor.ProcessWallet(canceledCtx, "1:USD")
-	s.Require().ErrorIs(err, context.Canceled)
-
-	s.storage.processErr = errBoom
-	err = processor.ProcessWallet(s.ctx, "1:USD")
-	s.Require().ErrorIs(err, errBoom)
-	s.Require().Contains(err.Error(), "process wallet")
-}
-
 type fakeTokenManager struct {
 	token  string
 	userID int64
@@ -437,18 +382,10 @@ func (f *fakeExchanger) GetRate(ctx context.Context, fromCurrency string, toCurr
 }
 
 type fakeStorage struct {
-	credentials         domain.UserCredentials
-	credentialsErr      error
-	balances            map[string]int64
-	balancesErr         error
-	enqueueErr          error
-	enqueuedOperationID string
-	enqueuedUserID      int64
-	pendingWallets      []string
-	listErr             error
-	processErr          error
-	processedWalletKey  string
-	processedBatchSize  int
+	credentials    domain.UserCredentials
+	credentialsErr error
+	balances       map[string]int64
+	balancesErr    error
 
 	createUserFn func(ctx context.Context, username string, email string, passwordHash string) (domain.User, error)
 	depositFn    func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error)
@@ -502,28 +439,6 @@ func (f *fakeStorage) Exchange(ctx context.Context, userID int64, fromCurrency d
 		return f.exchangeFn(ctx, userID, fromCurrency, toCurrency, fromAmountMinor, toAmountMinor)
 	}
 	return f.balances, nil
-}
-
-func (f *fakeStorage) EnqueueOperation(ctx context.Context, operationID string, userID int64, currency domain.Currency, operationType domain.OperationType, amountMinor int64) error {
-	f.enqueuedOperationID = operationID
-	f.enqueuedUserID = userID
-	return f.enqueueErr
-}
-
-func (f *fakeStorage) ListPendingWallets(ctx context.Context, limit int) ([]string, error) {
-	if f.listErr != nil {
-		return nil, f.listErr
-	}
-	return f.pendingWallets, nil
-}
-
-func (f *fakeStorage) ProcessWalletBatch(ctx context.Context, walletKey string, batchSize int) (int, error) {
-	f.processedWalletKey = walletKey
-	f.processedBatchSize = batchSize
-	if f.processErr != nil {
-		return 0, f.processErr
-	}
-	return 1, nil
 }
 
 func (f *fakeStorage) Close() error {

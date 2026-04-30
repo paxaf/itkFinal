@@ -27,23 +27,6 @@ func (s *DomainSuite) TestLoginUserValidate() {
 	s.Require().ErrorIs(LoginUser{Username: "paxaf"}.Validate(), ErrInvalidPassword)
 }
 
-func (s *DomainSuite) TestWalletOperationValidate() {
-	op := WalletOperation{UserID: 1, Currency: CurrencyUSD, OperationType: OperationDeposit, AmountMinor: 100}
-	s.Require().NoError(op.Validate())
-
-	op.UserID = 0
-	s.Require().ErrorIs(op.Validate(), ErrInvalidUserID)
-	op.UserID = 1
-	op.Currency = Currency("GBP")
-	s.Require().ErrorIs(op.Validate(), ErrInvalidCurrency)
-	op.Currency = CurrencyUSD
-	op.AmountMinor = 0
-	s.Require().ErrorIs(op.Validate(), ErrInvalidAmount)
-	op.AmountMinor = 100
-	op.OperationType = OperationType("BAD")
-	s.Require().ErrorIs(op.Validate(), ErrInvalidOperationType)
-}
-
 func (s *DomainSuite) TestExchangeOperationValidate() {
 	op := ExchangeOperation{UserID: 1, FromCurrency: CurrencyUSD, ToCurrency: CurrencyEUR, AmountMinor: 100}
 	s.Require().NoError(op.Validate())
@@ -70,9 +53,7 @@ func (s *DomainSuite) TestNormalizeCurrency() {
 	s.Require().ErrorIs(err, ErrInvalidCurrency)
 }
 
-func (s *DomainSuite) TestCurrencyAndOperationTypeValid() {
+func (s *DomainSuite) TestCurrencyValid() {
 	s.Require().True(CurrencyEUR.IsValid())
 	s.Require().False(Currency("GBP").IsValid())
-	s.Require().True(OperationWithdraw.IsValid())
-	s.Require().False(OperationType("BAD").IsValid())
 }

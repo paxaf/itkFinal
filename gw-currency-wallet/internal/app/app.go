@@ -21,7 +21,6 @@ import (
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages/postgres"
 	walletHTTP "github.com/paxaf/itkFinal/gw-currency-wallet/internal/transport/http"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/usecase"
-	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/worker"
 )
 
 const (
@@ -30,14 +29,12 @@ const (
 )
 
 type App struct {
-	cfg           *config.Config
-	log           *logger.Logger
-	apiStorage    storages.Storage
-	workerStorage storages.Storage
-	exchanger     *exchangerClient.Client
-	server        *http.Server
-	worker        *worker.Worker
-	path          string
+	cfg        *config.Config
+	log        *logger.Logger
+	apiStorage storages.Storage
+	exchanger  *exchangerClient.Client
+	server     *http.Server
+	path       string
 }
 
 var configPathFlag = flag.String("c", config.DefaultConfigPath, "path to config env file")
@@ -55,32 +52,19 @@ func New() (*App, error) {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	apiPostgresCfg := cfg.Postgres
-	apiPostgresCfg.MaxOpenConns = cfg.Postgres.APIMaxOpenConns
-	apiStorage, err := postgres.New(&apiPostgresCfg)
+	apiStorage, err := postgres.New(&cfg.Postgres)
 	if err != nil {
 		return nil, fmt.Errorf("create api storage: %w", err)
-	}
-
-	workerPostgresCfg := cfg.Postgres
-	workerPostgresCfg.MaxOpenConns = cfg.Postgres.WorkerMaxOpenConns
-	workerStorage, err := postgres.New(&workerPostgresCfg)
-	if err != nil {
-		_ = apiStorage.Close()
-		return nil, fmt.Errorf("create worker storage: %w", err)
 	}
 
 	tokenManager := auth.NewManager(cfg.Auth.JWTSecret, cfg.Auth.TokenTTL())
 	exchanger, err := exchangerClient.New(cfg.Exchanger.Address(), cfg.Exchanger.RequestTimeout())
 	if err != nil {
 		_ = apiStorage.Close()
-		_ = workerStorage.Close()
 		return nil, fmt.Errorf("create exchanger client: %w", err)
 	}
 
 	walletUC := usecase.New(apiStorage, tokenManager, exchanger)
-	processor := usecase.NewProcessor(workerStorage, usecase.ProcessorConfig{BatchSize: cfg.Worker.BatchSize})
-	bgWorker := worker.New(processor, log, cfg.Worker.PollInterval(), cfg.Worker.Concurrency, cfg.Worker.WalletsLimit)
 
 	handler := walletHTTP.NewHandler(walletUC, tokenManager, log)
 	server := &http.Server{
@@ -99,14 +83,12 @@ func New() (*App, error) {
 	})
 
 	return &App{
-		cfg:           cfg,
-		log:           log,
-		apiStorage:    apiStorage,
-		workerStorage: workerStorage,
-		exchanger:     exchanger,
-		server:        server,
-		worker:        bgWorker,
-		path:          configPath,
+		cfg:        cfg,
+		log:        log,
+		apiStorage: apiStorage,
+		exchanger:  exchanger,
+		server:     server,
+		path:       configPath,
 	}, nil
 }
 
@@ -117,10 +99,6 @@ func (a *App) Run() error {
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	if a.worker != nil {
-		go a.worker.Run(runCtx)
-	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -141,10 +119,6 @@ func (a *App) Run() error {
 func (a *App) Close() error {
 	var closeErr error
 
-	if a.worker != nil {
-		a.worker.Close()
-	}
-
 	if a.server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
@@ -159,15 +133,6 @@ func (a *App) Close() error {
 				return fmt.Errorf("%v; close api storage: %w", closeErr, err)
 			}
 			closeErr = fmt.Errorf("close api storage: %w", err)
-		}
-	}
-
-	if a.workerStorage != nil {
-		if err := a.workerStorage.Close(); err != nil {
-			if closeErr != nil {
-				return fmt.Errorf("%v; close worker storage: %w", closeErr, err)
-			}
-			closeErr = fmt.Errorf("close worker storage: %w", err)
 		}
 	}
 

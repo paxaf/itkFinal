@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages"
 	"golang.org/x/crypto/bcrypt"
@@ -32,7 +31,6 @@ type Authenticator interface {
 }
 
 type WalletOperator interface {
-	WalletOperation(ctx context.Context, op domain.WalletOperation) error
 	Deposit(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error)
 	Withdraw(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error)
 }
@@ -145,14 +143,11 @@ func (s *Service) Deposit(ctx context.Context, userID int64, currencyCode string
 		return nil, err
 	}
 
-	op := domain.WalletOperation{
-		UserID:        userID,
-		Currency:      currency,
-		OperationType: domain.OperationDeposit,
-		AmountMinor:   amountMinor,
+	if userID <= 0 {
+		return nil, domain.ErrInvalidUserID
 	}
-	if err = op.Validate(); err != nil {
-		return nil, err
+	if amountMinor <= 0 {
+		return nil, domain.ErrInvalidAmount
 	}
 
 	balances, err := s.storage.Deposit(ctx, userID, currency, amountMinor)
@@ -169,14 +164,11 @@ func (s *Service) Withdraw(ctx context.Context, userID int64, currencyCode strin
 		return nil, err
 	}
 
-	op := domain.WalletOperation{
-		UserID:        userID,
-		Currency:      currency,
-		OperationType: domain.OperationWithdraw,
-		AmountMinor:   amountMinor,
+	if userID <= 0 {
+		return nil, domain.ErrInvalidUserID
 	}
-	if err = op.Validate(); err != nil {
-		return nil, err
+	if amountMinor <= 0 {
+		return nil, domain.ErrInvalidAmount
 	}
 
 	balances, err := s.storage.Withdraw(ctx, userID, currency, amountMinor)
@@ -185,19 +177,6 @@ func (s *Service) Withdraw(ctx context.Context, userID int64, currencyCode strin
 	}
 
 	return normalizeBalances(balances)
-}
-
-func (s *Service) WalletOperation(ctx context.Context, op domain.WalletOperation) error {
-	if err := op.Validate(); err != nil {
-		return err
-	}
-
-	operationID := uuid.NewString()
-	if err := s.storage.EnqueueOperation(ctx, operationID, op.UserID, op.Currency, op.OperationType, op.AmountMinor); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (s *Service) GetExchangeRates(ctx context.Context) (map[string]float64, error) {

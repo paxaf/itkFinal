@@ -334,10 +334,6 @@ func (f *fakeUseCase) Login(ctx context.Context, user domain.LoginUser) (string,
 	return "token", nil
 }
 
-func (f *fakeUseCase) WalletOperation(ctx context.Context, op domain.WalletOperation) error {
-	return nil
-}
-
 func (f *fakeUseCase) Deposit(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
 	if f.depositFn != nil {
 		return f.depositFn(ctx, userID, currency, amountMinor)

@@ -90,7 +90,7 @@ func (s *PostgresIntegrationSuite) TearDownSuite() {
 }
 
 func (s *PostgresIntegrationSuite) SetupTest() {
-	_, err := s.db.ExecContext(s.ctx, `TRUNCATE TABLE wallet_operations, balances, users RESTART IDENTITY CASCADE`)
+	_, err := s.db.ExecContext(s.ctx, `TRUNCATE TABLE balances, users RESTART IDENTITY CASCADE`)
 	s.Require().NoError(err)
 }
 

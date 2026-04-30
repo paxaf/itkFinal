@@ -24,25 +24,10 @@ type BalanceChanger interface {
 	Exchange(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error)
 }
 
-type OperationEnqueuer interface {
-	EnqueueOperation(ctx context.Context, operationID string, userID int64, currency domain.Currency, operationType domain.OperationType, amountMinor int64) error
-}
-
-type PendingWalletsReader interface {
-	ListPendingWallets(ctx context.Context, limit int) ([]string, error)
-}
-
-type WalletBatchProcessor interface {
-	ProcessWalletBatch(ctx context.Context, walletKey string, batchSize int) (int, error)
-}
-
 type Storage interface {
 	UserCreator
 	UserReader
 	BalanceReader
 	BalanceChanger
-	OperationEnqueuer
-	PendingWalletsReader
-	WalletBatchProcessor
 	Close() error
 }

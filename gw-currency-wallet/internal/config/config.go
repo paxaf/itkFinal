@@ -14,7 +14,6 @@ type Config struct {
 	Postgres  Postgres  `mapstructure:",squash"`
 	Auth      Auth      `mapstructure:",squash"`
 	Exchanger Exchanger `mapstructure:",squash"`
-	Worker    Worker    `mapstructure:",squash"`
 	Logger    Logger    `mapstructure:",squash"`
 }
 
@@ -25,16 +24,14 @@ type HTTP struct {
 }
 
 type Postgres struct {
-	Host               string `mapstructure:"POSTGRES_HOST"`
-	Port               int    `mapstructure:"POSTGRES_PORT"`
-	User               string `mapstructure:"POSTGRES_USER"`
-	Password           string `mapstructure:"POSTGRES_PASSWORD"`
-	Name               string `mapstructure:"POSTGRES_DB"`
-	SSLMode            string `mapstructure:"POSTGRES_SSLMODE"`
-	MaxOpenConns       int    `mapstructure:"POSTGRES_MAX_OPEN_CONNS"`
-	MaxIdleConns       int    `mapstructure:"POSTGRES_MAX_IDLE_CONNS"`
-	APIMaxOpenConns    int    `mapstructure:"POSTGRES_API_MAX_OPEN_CONNS"`
-	WorkerMaxOpenConns int    `mapstructure:"POSTGRES_WORKER_MAX_OPEN_CONNS"`
+	Host         string `mapstructure:"POSTGRES_HOST"`
+	Port         int    `mapstructure:"POSTGRES_PORT"`
+	User         string `mapstructure:"POSTGRES_USER"`
+	Password     string `mapstructure:"POSTGRES_PASSWORD"`
+	Name         string `mapstructure:"POSTGRES_DB"`
+	SSLMode      string `mapstructure:"POSTGRES_SSLMODE"`
+	MaxOpenConns int    `mapstructure:"POSTGRES_MAX_OPEN_CONNS"`
+	MaxIdleConns int    `mapstructure:"POSTGRES_MAX_IDLE_CONNS"`
 }
 
 type Auth struct {
@@ -46,13 +43,6 @@ type Exchanger struct {
 	Host             string `mapstructure:"EXCHANGER_GRPC_HOST"`
 	Port             int    `mapstructure:"EXCHANGER_GRPC_PORT"`
 	RequestTimeoutMS int    `mapstructure:"EXCHANGER_GRPC_REQUEST_TIMEOUT_MS"`
-}
-
-type Worker struct {
-	PollIntervalMS int `mapstructure:"WORKER_POLL_INTERVAL_MS"`
-	WalletsLimit   int `mapstructure:"WORKER_WALLETS_LIMIT"`
-	BatchSize      int `mapstructure:"WORKER_BATCH_SIZE"`
-	Concurrency    int `mapstructure:"WORKER_CONCURRENCY"`
 }
 
 type Logger struct {
@@ -118,13 +108,6 @@ func (c *Config) validate() error {
 	if c.Postgres.MaxIdleConns < 0 {
 		return fmt.Errorf("POSTGRES_MAX_IDLE_CONNS must be greater than or equal to 0")
 	}
-	if c.Postgres.APIMaxOpenConns <= 0 {
-		c.Postgres.APIMaxOpenConns = c.Postgres.MaxOpenConns
-	}
-	if c.Postgres.WorkerMaxOpenConns <= 0 {
-		c.Postgres.WorkerMaxOpenConns = c.Postgres.MaxOpenConns
-	}
-
 	if strings.TrimSpace(c.Auth.JWTSecret) == "" {
 		return fmt.Errorf("JWT_SECRET is required")
 	}
@@ -140,10 +123,6 @@ func (c *Config) validate() error {
 	}
 	if c.Exchanger.RequestTimeoutMS <= 0 {
 		return fmt.Errorf("EXCHANGER_GRPC_REQUEST_TIMEOUT_MS must be greater than 0")
-	}
-
-	if c.Worker.PollIntervalMS <= 0 || c.Worker.WalletsLimit <= 0 || c.Worker.BatchSize <= 0 || c.Worker.Concurrency <= 0 {
-		return fmt.Errorf("WORKER_POLL_INTERVAL_MS, WORKER_WALLETS_LIMIT, WORKER_BATCH_SIZE and WORKER_CONCURRENCY must be greater than 0")
 	}
 
 	level := strings.ToLower(strings.TrimSpace(c.Logger.Level))
@@ -192,8 +171,4 @@ func (e *Exchanger) Address() string {
 
 func (e *Exchanger) RequestTimeout() time.Duration {
 	return time.Duration(e.RequestTimeoutMS) * time.Millisecond
-}
-
-func (w *Worker) PollInterval() time.Duration {
-	return time.Duration(w.PollIntervalMS) * time.Millisecond
 }
