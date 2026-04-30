@@ -2,7 +2,9 @@ package events
 
 import "context"
 
-type Publisher interface {
+type PublishLargeOperation interface {
 	NotifyLargeOperation(ctx context.Context, event LargeOperationEvent) error
 	Close() error
 }
+
+type PublishOperation interface{}

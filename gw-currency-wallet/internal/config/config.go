@@ -48,7 +48,8 @@ type Exchanger struct {
 
 type Kafka struct {
 	Brokers                         string `mapstructure:"KAFKA_BROKERS"`
-	Topic                           string `mapstructure:"KAFKA_TOPIC"`
+	OperationsTopic                 string `mapstructure:"KAFKA_OPERATIONS_TOPIC"`
+	LargeOperationsTopic            string `mapstructure:"KAFKA_LARGE_OPERATIONS_TOPIC"`
 	LargeOperationThresholdRubMinor int64  `mapstructure:"LARGE_OPERATION_THRESHOLD_RUB_MINOR"`
 }
 
@@ -135,8 +136,11 @@ func (c *Config) validate() error {
 	if len(c.Kafka.BrokerList()) == 0 {
 		return fmt.Errorf("KAFKA_BROKERS is required")
 	}
-	if strings.TrimSpace(c.Kafka.Topic) == "" {
-		return fmt.Errorf("KAFKA_TOPIC is required")
+	if strings.TrimSpace(c.Kafka.OperationsTopic) == "" {
+		return fmt.Errorf("KAFKA_OPERATIONS_TOPIC is required")
+	}
+	if strings.TrimSpace(c.Kafka.LargeOperationsTopic) == "" {
+		return fmt.Errorf("KAFKA_LARGE_OPERATIONS_TOPIC is required")
 	}
 	if c.Kafka.LargeOperationThresholdRubMinor <= 0 {
 		return fmt.Errorf("LARGE_OPERATION_THRESHOLD_RUB_MINOR must be greater than 0")

@@ -8,24 +8,27 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-type KafkaNotifier struct {
-	writer *kafka.Writer
+type KafkaPublisher struct {
+	writer               *kafka.Writer
+	operationsTopic      string
+	largeOperationsTopic string
 }
 
-func New(ctx context.Context, cfg config.Kafka) (*KafkaNotifier, error) {
+func New(ctx context.Context, cfg config.Kafka) (*KafkaPublisher, error) {
 	if err := pingKafka(ctx, cfg.BrokerList()); err != nil {
 		return nil, fmt.Errorf("ping kafka: %w", err)
 	}
 
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.BrokerList()...),
-		Topic:        cfg.Topic,
 		Balancer:     &kafka.LeastBytes{},
 		RequiredAcks: kafka.RequireAll,
 	}
 
-	return &KafkaNotifier{
-		writer: writer,
+	return &KafkaPublisher{
+		writer:               writer,
+		operationsTopic:      cfg.OperationsTopic,
+		largeOperationsTopic: cfg.LargeOperationsTopic,
 	}, nil
 }
 
@@ -49,4 +52,15 @@ func pingKafka(ctx context.Context, brokers []string) error {
 	}
 
 	return fmt.Errorf("all kafka brokers unavailable: %w", lastErr)
+}
+
+func (k *KafkaPublisher) Close() error {
+	if k.writer == nil {
+		return nil
+	}
+	err := k.writer.Close()
+	if err != nil {
+		return fmt.Errorf("close kafka writer: %w", err)
+	}
+	return nil
 }
