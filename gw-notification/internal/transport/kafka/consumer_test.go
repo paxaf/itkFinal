@@ -91,7 +91,7 @@ func (s *ConsumerSuite) TestHandleMessagesReturnsHandlerError() {
 func (s *ConsumerSuite) TestNewSetsBatchConfig() {
 	consumer := New(config.Kafka{
 		Brokers:     "localhost:9092",
-		Topic:       "large-money-operations",
+		Topic:       "wallet.large-operations",
 		GroupID:     "gw-notification-test",
 		MinBytes:    1,
 		MaxBytes:    1024,

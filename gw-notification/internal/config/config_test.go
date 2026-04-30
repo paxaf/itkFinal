@@ -22,7 +22,7 @@ func (s *ConfigSuite) TestLoadMissingFileUsesDefaults() {
 
 	s.Require().NoError(err)
 	s.Require().Equal([]string{"localhost:9092"}, cfg.Kafka.BrokerList())
-	s.Require().Equal("large-money-operations", cfg.Kafka.Topic)
+	s.Require().Equal("wallet.large-operations", cfg.Kafka.Topic)
 	s.Require().Equal(128, cfg.Kafka.BatchSize)
 	s.Require().Equal(50*time.Millisecond, cfg.Kafka.BatchWait())
 	s.Require().Equal("notification", cfg.Mongo.Database)

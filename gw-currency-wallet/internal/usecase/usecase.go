@@ -9,15 +9,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/clients/events"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages"
 	"golang.org/x/crypto/bcrypt"
 )
 
-const defaultRatesCacheTTL = 30 * time.Second
+const (
+	defaultRatesCacheTTL                   = 30 * time.Second
+	defaultLargeOperationThresholdRubMinor = 3000000
+)
 
 type TokenManager interface {
 	Generate(userID int64) (string, error)
+}
+
+type LargeOperationPublisher interface {
+	PublishLargeOperation(ctx context.Context, event events.LargeOperationEvent) error
 }
 
 type ExchangeProvider interface {
@@ -60,6 +69,9 @@ type Service struct {
 	storage      storages.Storage
 	tokenManager TokenManager
 	exchanger    ExchangeProvider
+	publisher    LargeOperationPublisher
+
+	largeOperationThresholdRubMinor int64
 
 	ratesCacheMu  sync.RWMutex
 	ratesCache    map[string]float64
@@ -67,12 +79,24 @@ type Service struct {
 	ratesCacheTTL time.Duration
 }
 
-func New(storage storages.Storage, tokenManager TokenManager, exchanger ExchangeProvider) *Service {
+func New(
+	storage storages.Storage,
+	tokenManager TokenManager,
+	exchanger ExchangeProvider,
+	publisher LargeOperationPublisher,
+	largeOperationThresholdRubMinor int64,
+) *Service {
+	if largeOperationThresholdRubMinor <= 0 {
+		largeOperationThresholdRubMinor = defaultLargeOperationThresholdRubMinor
+	}
+
 	return &Service{
-		storage:       storage,
-		tokenManager:  tokenManager,
-		exchanger:     exchanger,
-		ratesCacheTTL: defaultRatesCacheTTL,
+		storage:                         storage,
+		tokenManager:                    tokenManager,
+		exchanger:                       exchanger,
+		publisher:                       publisher,
+		largeOperationThresholdRubMinor: largeOperationThresholdRubMinor,
+		ratesCacheTTL:                   defaultRatesCacheTTL,
 	}
 }
 
@@ -155,7 +179,14 @@ func (s *Service) Deposit(ctx context.Context, userID int64, currencyCode string
 		return nil, err
 	}
 
-	return normalizeBalances(balances)
+	normalized, err := normalizeBalances(balances)
+	if err != nil {
+		return nil, err
+	}
+
+	s.checkAndPublish(ctx, userID, events.OperationTypeDeposit, currency, amountMinor)
+
+	return normalized, nil
 }
 
 func (s *Service) Withdraw(ctx context.Context, userID int64, currencyCode string, amountMinor int64) (map[string]int64, error) {
@@ -176,7 +207,14 @@ func (s *Service) Withdraw(ctx context.Context, userID int64, currencyCode strin
 		return nil, err
 	}
 
-	return normalizeBalances(balances)
+	normalized, err := normalizeBalances(balances)
+	if err != nil {
+		return nil, err
+	}
+
+	s.checkAndPublish(ctx, userID, events.OperationTypeWithdraw, currency, amountMinor)
+
+	return normalized, nil
 }
 
 func (s *Service) GetExchangeRates(ctx context.Context) (map[string]float64, error) {
@@ -233,10 +271,67 @@ func (s *Service) Exchange(ctx context.Context, op domain.ExchangeOperation) (Ex
 		return ExchangeResult{}, err
 	}
 
+	s.checkAndPublish(ctx, op.UserID, events.OperationTypeExchange, op.FromCurrency, op.AmountMinor)
+
 	return ExchangeResult{
 		ExchangedAmountMinor: toAmountMinor,
 		NewBalance:           normalized,
 	}, nil
+}
+
+func (s *Service) checkAndPublish(
+	ctx context.Context,
+	userID int64,
+	operationType string,
+	currency domain.Currency,
+	amountMinor int64,
+) {
+	if s.publisher == nil {
+		return
+	}
+
+	amountRubMinor, err := s.amountRubMinor(ctx, currency, amountMinor)
+	if err != nil {
+		return
+	}
+
+	if amountRubMinor < s.largeOperationThresholdRubMinor {
+		return
+	}
+
+	_ = s.publisher.PublishLargeOperation(ctx, events.LargeOperationEvent{
+		EventID:        uuid.NewString(),
+		UserID:         userID,
+		OperationType:  operationType,
+		Currency:       string(currency),
+		AmountMinor:    amountMinor,
+		AmountRubMinor: amountRubMinor,
+		CreatedAt:      time.Now().UTC(),
+	})
+}
+
+func (s *Service) amountRubMinor(ctx context.Context, currency domain.Currency, amountMinor int64) (int64, error) {
+	if currency == domain.CurrencyRUB {
+		return amountMinor, nil
+	}
+
+	if s.exchanger == nil {
+		return 0, domain.ErrExchangeRateUnavailable
+	}
+
+	rate, ok := s.cachedRate(currency, domain.CurrencyRUB)
+	if !ok {
+		var err error
+		rate, err = s.exchanger.GetRate(ctx, string(currency), string(domain.CurrencyRUB))
+		if err != nil {
+			return 0, fmt.Errorf("get rub exchange rate: %w", err)
+		}
+		if !isValidRate(rate) {
+			return 0, domain.ErrExchangeRateUnavailable
+		}
+	}
+
+	return convertMinor(amountMinor, rate), nil
 }
 
 func normalizeBalances(balances map[string]int64) (map[string]int64, error) {

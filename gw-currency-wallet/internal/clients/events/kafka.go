@@ -2,7 +2,9 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/config"
 	"github.com/segmentio/kafka-go"
@@ -61,6 +63,22 @@ func (k *KafkaPublisher) Close() error {
 	err := k.writer.Close()
 	if err != nil {
 		return fmt.Errorf("close kafka writer: %w", err)
+	}
+	return nil
+}
+
+func (k *KafkaPublisher) PublishLargeOperation(ctx context.Context, event LargeOperationEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal large op event: %w", err)
+	}
+
+	if err = k.writer.WriteMessages(ctx, kafka.Message{
+		Topic: k.largeOperationsTopic,
+		Key:   []byte(strconv.FormatInt(event.UserID, 10)),
+		Value: payload,
+	}); err != nil {
+		return fmt.Errorf("write large operation event: %w", err)
 	}
 	return nil
 }

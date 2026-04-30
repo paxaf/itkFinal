@@ -2,7 +2,6 @@ package http
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	stdhttp "net/http"
@@ -13,16 +12,19 @@ import (
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/auth"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/logger"
+	httpmocks "github.com/paxaf/itkFinal/gw-currency-wallet/internal/mocks/transport/http"
+	usecaseapimocks "github.com/paxaf/itkFinal/gw-currency-wallet/internal/mocks/usecaseapi"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/usecase"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
 
 type HandlerSuite struct {
 	suite.Suite
 
-	uc     *fakeUseCase
-	tokens *fakeTokenParser
+	uc     *usecaseapimocks.UseCaseMock
+	tokens *httpmocks.TokenParserMock
 	router *gin.Engine
 }
 
@@ -32,17 +34,16 @@ func TestHandlerSuite(t *testing.T) {
 
 func (s *HandlerSuite) SetupTest() {
 	gin.SetMode(gin.TestMode)
-	s.uc = &fakeUseCase{}
-	s.tokens = &fakeTokenParser{userID: 7}
+	s.uc = usecaseapimocks.NewUseCaseMock(s.T())
+	s.tokens = httpmocks.NewTokenParserMock(s.T())
 	h := NewHandler(s.uc, s.tokens, logger.New("error"))
 	s.router = NewRouter(h, false)
 }
 
 func (s *HandlerSuite) TestRegisterSuccess() {
-	s.uc.registerFn = func(ctx context.Context, user domain.RegisterUser) (domain.User, error) {
-		s.Require().Equal("paxaf", user.Username)
-		return domain.User{ID: 7, Username: user.Username, Email: user.Email}, nil
-	}
+	s.uc.EXPECT().Register(mock.Anything, mock.MatchedBy(func(user domain.RegisterUser) bool {
+		return user.Username == "paxaf" && user.Password == "secret1" && user.Email == "paxaf@example.com"
+	})).Return(domain.User{ID: 7, Username: "paxaf", Email: "paxaf@example.com"}, nil).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/register", `{"username":"paxaf","password":"secret1","email":"paxaf@example.com"}`, "")
 
@@ -64,9 +65,9 @@ func (s *HandlerSuite) TestRegisterBadJSON() {
 }
 
 func (s *HandlerSuite) TestRegisterDuplicateUser() {
-	s.uc.registerFn = func(ctx context.Context, user domain.RegisterUser) (domain.User, error) {
-		return domain.User{}, storages.ErrDuplicateUser
-	}
+	s.uc.EXPECT().Register(mock.Anything, mock.MatchedBy(func(user domain.RegisterUser) bool {
+		return user.Username == "paxaf" && user.Password == "secret1" && user.Email == "paxaf@example.com"
+	})).Return(domain.User{}, storages.ErrDuplicateUser).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/register", `{"username":"paxaf","password":"secret1","email":"paxaf@example.com"}`, "")
 
@@ -75,10 +76,9 @@ func (s *HandlerSuite) TestRegisterDuplicateUser() {
 }
 
 func (s *HandlerSuite) TestLoginSuccess() {
-	s.uc.loginFn = func(ctx context.Context, user domain.LoginUser) (string, error) {
-		s.Require().Equal("paxaf", user.Username)
-		return "jwt-token", nil
-	}
+	s.uc.EXPECT().Login(mock.Anything, mock.MatchedBy(func(user domain.LoginUser) bool {
+		return user.Username == "paxaf" && user.Password == "secret1"
+	})).Return("jwt-token", nil).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/login", `{"username":"paxaf","password":"secret1"}`, "")
 
@@ -87,9 +87,9 @@ func (s *HandlerSuite) TestLoginSuccess() {
 }
 
 func (s *HandlerSuite) TestLoginInvalidCredentials() {
-	s.uc.loginFn = func(ctx context.Context, user domain.LoginUser) (string, error) {
-		return "", domain.ErrInvalidCredentials
-	}
+	s.uc.EXPECT().Login(mock.Anything, mock.MatchedBy(func(user domain.LoginUser) bool {
+		return user.Username == "paxaf" && user.Password == "badpass"
+	})).Return("", domain.ErrInvalidCredentials).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/login", `{"username":"paxaf","password":"badpass"}`, "")
 
@@ -103,7 +103,7 @@ func (s *HandlerSuite) TestBalanceRequiresToken() {
 }
 
 func (s *HandlerSuite) TestProtectedRouteRejectsInvalidToken() {
-	s.tokens.err = auth.ErrInvalidToken
+	s.tokens.EXPECT().Parse("broken").Return(int64(0), auth.ErrInvalidToken).Once()
 
 	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer broken")
 
@@ -111,10 +111,8 @@ func (s *HandlerSuite) TestProtectedRouteRejectsInvalidToken() {
 }
 
 func (s *HandlerSuite) TestGetBalanceSuccess() {
-	s.uc.balanceFn = func(ctx context.Context, userID int64) (map[string]int64, error) {
-		s.Require().Equal(int64(7), userID)
-		return map[string]int64{"USD": 10050, "RUB": 0, "EUR": 9200}, nil
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().GetBalance(mock.Anything, int64(7)).Return(map[string]int64{"USD": 10050, "RUB": 0, "EUR": 9200}, nil).Once()
 
 	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer ok")
 
@@ -123,9 +121,8 @@ func (s *HandlerSuite) TestGetBalanceSuccess() {
 }
 
 func (s *HandlerSuite) TestGetBalanceUserNotFound() {
-	s.uc.balanceFn = func(ctx context.Context, userID int64) (map[string]int64, error) {
-		return nil, storages.ErrUserNotFound
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().GetBalance(mock.Anything, int64(7)).Return(nil, storages.ErrUserNotFound).Once()
 
 	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer ok")
 
@@ -133,12 +130,8 @@ func (s *HandlerSuite) TestGetBalanceUserNotFound() {
 }
 
 func (s *HandlerSuite) TestDepositSuccess() {
-	s.uc.depositFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
-		s.Require().Equal(int64(7), userID)
-		s.Require().Equal("USD", currency)
-		s.Require().Equal(int64(10050), amountMinor)
-		return map[string]int64{"USD": 10050, "RUB": 0, "EUR": 0}, nil
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().Deposit(mock.Anything, int64(7), "USD", int64(10050)).Return(map[string]int64{"USD": 10050, "RUB": 0, "EUR": 0}, nil).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.50,"currency":"USD"}`, "Bearer ok")
 
@@ -147,6 +140,8 @@ func (s *HandlerSuite) TestDepositSuccess() {
 }
 
 func (s *HandlerSuite) TestDepositBadAmount() {
+	s.expectToken("ok", 7)
+
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.999,"currency":"USD"}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
@@ -154,9 +149,8 @@ func (s *HandlerSuite) TestDepositBadAmount() {
 }
 
 func (s *HandlerSuite) TestDepositUsecaseError() {
-	s.uc.depositFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
-		return nil, domain.ErrInvalidCurrency
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().Deposit(mock.Anything, int64(7), "GBP", int64(10050)).Return(nil, domain.ErrInvalidCurrency).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/deposit", `{"amount":100.50,"currency":"GBP"}`, "Bearer ok")
 
@@ -165,9 +159,8 @@ func (s *HandlerSuite) TestDepositUsecaseError() {
 }
 
 func (s *HandlerSuite) TestWithdrawInsufficientFunds() {
-	s.uc.withdrawFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
-		return nil, domain.ErrInsufficientFunds
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().Withdraw(mock.Anything, int64(7), "USD", int64(10050)).Return(nil, domain.ErrInsufficientFunds).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/withdraw", `{"amount":100.50,"currency":"USD"}`, "Bearer ok")
 
@@ -176,9 +169,8 @@ func (s *HandlerSuite) TestWithdrawInsufficientFunds() {
 }
 
 func (s *HandlerSuite) TestWithdrawSuccess() {
-	s.uc.withdrawFn = func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
-		return map[string]int64{"USD": 5000, "EUR": 0, "RUB": 0}, nil
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().Withdraw(mock.Anything, int64(7), "USD", int64(5000)).Return(map[string]int64{"USD": 5000, "EUR": 0, "RUB": 0}, nil).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/wallet/withdraw", `{"amount":50,"currency":"USD"}`, "Bearer ok")
 
@@ -187,9 +179,8 @@ func (s *HandlerSuite) TestWithdrawSuccess() {
 }
 
 func (s *HandlerSuite) TestGetExchangeRatesSuccess() {
-	s.uc.ratesFn = func(ctx context.Context) (map[string]float64, error) {
-		return map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}, nil
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().GetExchangeRates(mock.Anything).Return(map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}, nil).Once()
 
 	resp := s.request(stdhttp.MethodGet, "/api/v1/exchange/rates", "", "Bearer ok")
 
@@ -198,9 +189,8 @@ func (s *HandlerSuite) TestGetExchangeRatesSuccess() {
 }
 
 func (s *HandlerSuite) TestGetExchangeRatesError() {
-	s.uc.ratesFn = func(ctx context.Context) (map[string]float64, error) {
-		return nil, domain.ErrExchangeRateUnavailable
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().GetExchangeRates(mock.Anything).Return(nil, domain.ErrExchangeRateUnavailable).Once()
 
 	resp := s.request(stdhttp.MethodGet, "/api/v1/exchange/rates", "", "Bearer ok")
 
@@ -208,16 +198,16 @@ func (s *HandlerSuite) TestGetExchangeRatesError() {
 }
 
 func (s *HandlerSuite) TestExchangeSuccess() {
-	s.uc.exchangeFn = func(ctx context.Context, op domain.ExchangeOperation) (usecase.ExchangeResult, error) {
-		s.Require().Equal(int64(7), op.UserID)
-		s.Require().Equal(domain.CurrencyUSD, op.FromCurrency)
-		s.Require().Equal(domain.CurrencyEUR, op.ToCurrency)
-		s.Require().Equal(int64(10000), op.AmountMinor)
-		return usecase.ExchangeResult{
-			ExchangedAmountMinor: 9200,
-			NewBalance:           map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0},
-		}, nil
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().Exchange(mock.Anything, domain.ExchangeOperation{
+		UserID:       7,
+		FromCurrency: domain.CurrencyUSD,
+		ToCurrency:   domain.CurrencyEUR,
+		AmountMinor:  10000,
+	}).Return(usecase.ExchangeResult{
+		ExchangedAmountMinor: 9200,
+		NewBalance:           map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0},
+	}, nil).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"USD","to_currency":"EUR","amount":100}`, "Bearer ok")
 
@@ -226,6 +216,8 @@ func (s *HandlerSuite) TestExchangeSuccess() {
 }
 
 func (s *HandlerSuite) TestExchangeBadCurrency() {
+	s.expectToken("ok", 7)
+
 	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"GBP","to_currency":"EUR","amount":100}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
@@ -233,15 +225,21 @@ func (s *HandlerSuite) TestExchangeBadCurrency() {
 }
 
 func (s *HandlerSuite) TestExchangeBadAmount() {
+	s.expectToken("ok", 7)
+
 	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"USD","to_currency":"EUR","amount":0}`, "Bearer ok")
 
 	s.Require().Equal(stdhttp.StatusBadRequest, resp.Code)
 }
 
 func (s *HandlerSuite) TestExchangeInsufficientFunds() {
-	s.uc.exchangeFn = func(ctx context.Context, op domain.ExchangeOperation) (usecase.ExchangeResult, error) {
-		return usecase.ExchangeResult{}, domain.ErrInsufficientFunds
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().Exchange(mock.Anything, domain.ExchangeOperation{
+		UserID:       7,
+		FromCurrency: domain.CurrencyUSD,
+		ToCurrency:   domain.CurrencyEUR,
+		AmountMinor:  10000,
+	}).Return(usecase.ExchangeResult{}, domain.ErrInsufficientFunds).Once()
 
 	resp := s.request(stdhttp.MethodPost, "/api/v1/exchange", `{"from_currency":"USD","to_currency":"EUR","amount":100}`, "Bearer ok")
 
@@ -250,9 +248,8 @@ func (s *HandlerSuite) TestExchangeInsufficientFunds() {
 }
 
 func (s *HandlerSuite) TestInternalErrorBranch() {
-	s.uc.balanceFn = func(ctx context.Context, userID int64) (map[string]int64, error) {
-		return nil, errors.New("db unavailable")
-	}
+	s.expectToken("ok", 7)
+	s.uc.EXPECT().GetBalance(mock.Anything, int64(7)).Return(nil, errors.New("db unavailable")).Once()
 
 	resp := s.request(stdhttp.MethodGet, "/api/v1/balance", "", "Bearer ok")
 
@@ -278,6 +275,10 @@ func (s *HandlerSuite) TestAmountToMinor() {
 	}
 }
 
+func (s *HandlerSuite) expectToken(token string, userID int64) {
+	s.tokens.EXPECT().Parse(token).Return(userID, nil).Once()
+}
+
 func (s *HandlerSuite) request(method string, path string, body string, authHeader string) *httptest.ResponseRecorder {
 	var reader *bytes.Reader
 	if body == "" {
@@ -296,75 +297,4 @@ func (s *HandlerSuite) request(method string, path string, body string, authHead
 	resp := httptest.NewRecorder()
 	s.router.ServeHTTP(resp, req)
 	return resp
-}
-
-type fakeTokenParser struct {
-	userID int64
-	err    error
-}
-
-func (f *fakeTokenParser) Parse(tokenValue string) (int64, error) {
-	if f.err != nil {
-		return 0, f.err
-	}
-	return f.userID, nil
-}
-
-type fakeUseCase struct {
-	registerFn func(ctx context.Context, user domain.RegisterUser) (domain.User, error)
-	loginFn    func(ctx context.Context, user domain.LoginUser) (string, error)
-	balanceFn  func(ctx context.Context, userID int64) (map[string]int64, error)
-	depositFn  func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error)
-	withdrawFn func(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error)
-	ratesFn    func(ctx context.Context) (map[string]float64, error)
-	exchangeFn func(ctx context.Context, op domain.ExchangeOperation) (usecase.ExchangeResult, error)
-}
-
-func (f *fakeUseCase) Register(ctx context.Context, user domain.RegisterUser) (domain.User, error) {
-	if f.registerFn != nil {
-		return f.registerFn(ctx, user)
-	}
-	return domain.User{ID: 1}, nil
-}
-
-func (f *fakeUseCase) Login(ctx context.Context, user domain.LoginUser) (string, error) {
-	if f.loginFn != nil {
-		return f.loginFn(ctx, user)
-	}
-	return "token", nil
-}
-
-func (f *fakeUseCase) Deposit(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
-	if f.depositFn != nil {
-		return f.depositFn(ctx, userID, currency, amountMinor)
-	}
-	return nil, nil
-}
-
-func (f *fakeUseCase) Withdraw(ctx context.Context, userID int64, currency string, amountMinor int64) (map[string]int64, error) {
-	if f.withdrawFn != nil {
-		return f.withdrawFn(ctx, userID, currency, amountMinor)
-	}
-	return nil, nil
-}
-
-func (f *fakeUseCase) GetBalance(ctx context.Context, userID int64) (map[string]int64, error) {
-	if f.balanceFn != nil {
-		return f.balanceFn(ctx, userID)
-	}
-	return nil, nil
-}
-
-func (f *fakeUseCase) GetExchangeRates(ctx context.Context) (map[string]float64, error) {
-	if f.ratesFn != nil {
-		return f.ratesFn(ctx)
-	}
-	return nil, nil
-}
-
-func (f *fakeUseCase) Exchange(ctx context.Context, op domain.ExchangeOperation) (usecase.ExchangeResult, error) {
-	if f.exchangeFn != nil {
-		return f.exchangeFn(ctx, op)
-	}
-	return usecase.ExchangeResult{}, nil
 }

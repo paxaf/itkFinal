@@ -6,7 +6,7 @@ const DefaultConfigPath = "config.env"
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("KAFKA_BROKERS", "localhost:9092")
-	v.SetDefault("KAFKA_TOPIC", "large-money-operations")
+	v.SetDefault("KAFKA_TOPIC", "wallet.large-operations")
 	v.SetDefault("KAFKA_GROUP_ID", "gw-notification")
 	v.SetDefault("KAFKA_MIN_BYTES", 1)
 	v.SetDefault("KAFKA_MAX_BYTES", 10485760)

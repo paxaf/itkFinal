@@ -1,0 +1,49 @@
+with-expecter: true
+issue-845-fix: true
+resolve-type-alias: false
+disable-version-string: true
+
+packages:
+  github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages:
+    config:
+      dir: internal/mocks/storages
+      outpkg: storagesmocks
+    interfaces:
+      Storage:
+        config:
+          filename: storage_mock.go
+          mockname: StorageMock
+
+  github.com/paxaf/itkFinal/gw-currency-wallet/internal/usecase:
+    config:
+      dir: internal/mocks/usecase
+      outpkg: usecasemocks
+    interfaces:
+      TokenManager:
+        config:
+          filename: token_manager_mock.go
+          mockname: TokenManagerMock
+      ExchangeProvider:
+        config:
+          filename: exchange_provider_mock.go
+          mockname: ExchangeProviderMock
+      LargeOperationPublisher:
+        config:
+          filename: large_operation_publisher_mock.go
+          mockname: LargeOperationPublisherMock
+      UseCase:
+        config:
+          dir: internal/mocks/usecaseapi
+          outpkg: usecaseapimocks
+          filename: usecase_mock.go
+          mockname: UseCaseMock
+
+  github.com/paxaf/itkFinal/gw-currency-wallet/internal/transport/http:
+    config:
+      dir: internal/mocks/transport/http
+      outpkg: httpmocks
+    interfaces:
+      TokenParser:
+        config:
+          filename: token_parser_mock.go
+          mockname: TokenParserMock

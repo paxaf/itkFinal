@@ -6,8 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/clients/events"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/domain"
+	storagesmocks "github.com/paxaf/itkFinal/gw-currency-wallet/internal/mocks/storages"
+	usecasemocks "github.com/paxaf/itkFinal/gw-currency-wallet/internal/mocks/usecase"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/storages"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -16,9 +20,10 @@ type UseCaseSuite struct {
 	suite.Suite
 
 	ctx       context.Context
-	storage   *fakeStorage
-	tokens    *fakeTokenManager
-	exchanger *fakeExchanger
+	storage   *storagesmocks.StorageMock
+	tokens    *usecasemocks.TokenManagerMock
+	exchanger *usecasemocks.ExchangeProviderMock
+	publisher *usecasemocks.LargeOperationPublisherMock
 	service   *Service
 }
 
@@ -28,19 +33,22 @@ func TestUseCaseSuite(t *testing.T) {
 
 func (s *UseCaseSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.storage = &fakeStorage{}
-	s.tokens = &fakeTokenManager{token: "token"}
-	s.exchanger = &fakeExchanger{}
-	s.service = New(s.storage, s.tokens, s.exchanger)
+	s.storage = storagesmocks.NewStorageMock(s.T())
+	s.tokens = usecasemocks.NewTokenManagerMock(s.T())
+	s.exchanger = usecasemocks.NewExchangeProviderMock(s.T())
+	s.publisher = usecasemocks.NewLargeOperationPublisherMock(s.T())
+	s.service = New(s.storage, s.tokens, s.exchanger, nil, 3000000)
 }
 
 func (s *UseCaseSuite) TestRegisterHashesPasswordAndCreatesUser() {
-	s.storage.createUserFn = func(ctx context.Context, username string, email string, passwordHash string) (domain.User, error) {
-		s.Require().Equal("paxaf", username)
-		s.Require().Equal("paxaf@example.com", email)
-		s.Require().NoError(bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte("secret1")))
-		return domain.User{ID: 1, Username: username, Email: email}, nil
-	}
+	s.storage.EXPECT().CreateUser(
+		s.ctx,
+		"paxaf",
+		"paxaf@example.com",
+		mock.MatchedBy(func(passwordHash string) bool {
+			return bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte("secret1")) == nil
+		}),
+	).Return(domain.User{ID: 1, Username: "paxaf", Email: "paxaf@example.com"}, nil).Once()
 
 	user, err := s.service.Register(s.ctx, domain.RegisterUser{
 		Username: " paxaf ",
@@ -53,9 +61,12 @@ func (s *UseCaseSuite) TestRegisterHashesPasswordAndCreatesUser() {
 }
 
 func (s *UseCaseSuite) TestRegisterReturnsDuplicateUser() {
-	s.storage.createUserFn = func(ctx context.Context, username string, email string, passwordHash string) (domain.User, error) {
-		return domain.User{}, storages.ErrDuplicateUser
-	}
+	s.storage.EXPECT().CreateUser(
+		s.ctx,
+		"paxaf",
+		"paxaf@example.com",
+		mock.AnythingOfType("string"),
+	).Return(domain.User{}, storages.ErrDuplicateUser).Once()
 
 	_, err := s.service.Register(s.ctx, domain.RegisterUser{Username: "paxaf", Email: "paxaf@example.com", Password: "secret1"})
 
@@ -71,20 +82,21 @@ func (s *UseCaseSuite) TestRegisterReturnsValidationError() {
 func (s *UseCaseSuite) TestLoginReturnsToken() {
 	hash, err := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
 	s.Require().NoError(err)
-	s.storage.credentials = domain.UserCredentials{
+
+	s.storage.EXPECT().GetUserCredentialsByUsername(s.ctx, "paxaf").Return(domain.UserCredentials{
 		User:         domain.User{ID: 42, Username: "paxaf", Email: "paxaf@example.com"},
 		PasswordHash: string(hash),
-	}
+	}, nil).Once()
+	s.tokens.EXPECT().Generate(int64(42)).Return("token", nil).Once()
 
 	token, err := s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
 
 	s.Require().NoError(err)
 	s.Require().Equal("token", token)
-	s.Require().Equal(int64(42), s.tokens.userID)
 }
 
 func (s *UseCaseSuite) TestLoginReturnsStorageError() {
-	s.storage.credentialsErr = errBoom
+	s.storage.EXPECT().GetUserCredentialsByUsername(s.ctx, "paxaf").Return(domain.UserCredentials{}, errBoom).Once()
 
 	_, err := s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
 
@@ -94,8 +106,12 @@ func (s *UseCaseSuite) TestLoginReturnsStorageError() {
 func (s *UseCaseSuite) TestLoginReturnsTokenError() {
 	hash, err := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
 	s.Require().NoError(err)
-	s.storage.credentials = domain.UserCredentials{User: domain.User{ID: 42}, PasswordHash: string(hash)}
-	s.tokens.err = errBoom
+
+	s.storage.EXPECT().GetUserCredentialsByUsername(s.ctx, "paxaf").Return(domain.UserCredentials{
+		User:         domain.User{ID: 42},
+		PasswordHash: string(hash),
+	}, nil).Once()
+	s.tokens.EXPECT().Generate(int64(42)).Return("", errBoom).Once()
 
 	_, err = s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
 
@@ -105,7 +121,11 @@ func (s *UseCaseSuite) TestLoginReturnsTokenError() {
 func (s *UseCaseSuite) TestLoginReturnsInvalidCredentialsOnWrongPassword() {
 	hash, err := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
 	s.Require().NoError(err)
-	s.storage.credentials = domain.UserCredentials{User: domain.User{ID: 42}, PasswordHash: string(hash)}
+
+	s.storage.EXPECT().GetUserCredentialsByUsername(s.ctx, "paxaf").Return(domain.UserCredentials{
+		User:         domain.User{ID: 42},
+		PasswordHash: string(hash),
+	}, nil).Once()
 
 	_, err = s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "badpass"})
 
@@ -113,13 +133,15 @@ func (s *UseCaseSuite) TestLoginReturnsInvalidCredentialsOnWrongPassword() {
 }
 
 func (s *UseCaseSuite) TestLoginReturnsInvalidCredentialsWhenUserMissing() {
+	s.storage.EXPECT().GetUserCredentialsByUsername(s.ctx, "paxaf").Return(domain.UserCredentials{}, storages.ErrUserNotFound).Once()
+
 	_, err := s.service.Login(s.ctx, domain.LoginUser{Username: "paxaf", Password: "secret1"})
 
 	s.Require().ErrorIs(err, domain.ErrInvalidCredentials)
 }
 
 func (s *UseCaseSuite) TestGetBalanceNormalizesMissingCurrencies() {
-	s.storage.balances = map[string]int64{"USD": 10000}
+	s.storage.EXPECT().GetBalances(s.ctx, int64(1)).Return(map[string]int64{"USD": 10000}, nil).Once()
 
 	balance, err := s.service.GetBalance(s.ctx, 1)
 
@@ -131,28 +153,81 @@ func (s *UseCaseSuite) TestGetBalanceErrors() {
 	_, err := s.service.GetBalance(s.ctx, 0)
 	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
 
-	s.storage.balancesErr = errBoom
+	s.storage.EXPECT().GetBalances(s.ctx, int64(1)).Return(nil, errBoom).Once()
 	_, err = s.service.GetBalance(s.ctx, 1)
 	s.Require().ErrorIs(err, errBoom)
 
-	s.storage.balancesErr = nil
-	s.storage.balances = map[string]int64{"GBP": 100}
+	s.storage.EXPECT().GetBalances(s.ctx, int64(1)).Return(map[string]int64{"GBP": 100}, nil).Once()
 	_, err = s.service.GetBalance(s.ctx, 1)
 	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
 }
 
 func (s *UseCaseSuite) TestDepositCallsStorage() {
-	s.storage.depositFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-		s.Require().Equal(int64(1), userID)
-		s.Require().Equal(domain.CurrencyUSD, currency)
-		s.Require().Equal(int64(10050), amountMinor)
-		return map[string]int64{"USD": 10050, "RUB": 0, "EUR": 0}, nil
-	}
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyUSD, int64(10050)).Return(map[string]int64{
+		"USD": 10050,
+		"RUB": 0,
+		"EUR": 0,
+	}, nil).Once()
 
 	balance, err := s.service.Deposit(s.ctx, 1, "usd", 10050)
 
 	s.Require().NoError(err)
 	s.Require().Equal(int64(10050), balance["USD"])
+}
+
+func (s *UseCaseSuite) TestDepositPublishesLargeOperation() {
+	s.service.publisher = s.publisher
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
+	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
+		return event.EventID != "" &&
+			event.UserID == 1 &&
+			event.OperationType == events.OperationTypeDeposit &&
+			event.Currency == "RUB" &&
+			event.AmountMinor == 3000000 &&
+			event.AmountRubMinor == 3000000 &&
+			!event.CreatedAt.IsZero()
+	})).Return(nil).Once()
+
+	balance, err := s.service.Deposit(s.ctx, 1, "rub", 3000000)
+
+	s.Require().NoError(err)
+	s.Require().Equal(int64(3000000), balance["RUB"])
+}
+
+func (s *UseCaseSuite) TestDepositPublishesLargeOperationWithRubEquivalent() {
+	s.service.publisher = s.publisher
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyUSD, int64(40000)).Return(map[string]int64{"USD": 40000}, nil).Once()
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "RUB").Return(float64(90), nil).Once()
+	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
+		return event.OperationType == events.OperationTypeDeposit &&
+			event.Currency == "USD" &&
+			event.AmountMinor == 40000 &&
+			event.AmountRubMinor == 3600000
+	})).Return(nil).Once()
+
+	balance, err := s.service.Deposit(s.ctx, 1, "usd", 40000)
+
+	s.Require().NoError(err)
+	s.Require().Equal(int64(40000), balance["USD"])
+}
+
+func (s *UseCaseSuite) TestDepositSkipsSmallOperation() {
+	s.service.publisher = s.publisher
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(2999999)).Return(map[string]int64{"RUB": 2999999}, nil).Once()
+
+	_, err := s.service.Deposit(s.ctx, 1, "rub", 2999999)
+
+	s.Require().NoError(err)
+}
+
+func (s *UseCaseSuite) TestDepositIgnoresPublishError() {
+	s.service.publisher = s.publisher
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
+	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.AnythingOfType("events.LargeOperationEvent")).Return(errBoom).Once()
+
+	_, err := s.service.Deposit(s.ctx, 1, "rub", 3000000)
+
+	s.Require().NoError(err)
 }
 
 func (s *UseCaseSuite) TestDepositErrors() {
@@ -162,23 +237,17 @@ func (s *UseCaseSuite) TestDepositErrors() {
 	_, err = s.service.Deposit(s.ctx, 0, "USD", 100)
 	s.Require().ErrorIs(err, domain.ErrInvalidUserID)
 
-	s.storage.depositFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-		return nil, errBoom
-	}
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyUSD, int64(100)).Return(nil, errBoom).Once()
 	_, err = s.service.Deposit(s.ctx, 1, "USD", 100)
 	s.Require().ErrorIs(err, errBoom)
 
-	s.storage.depositFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-		return map[string]int64{"GBP": 100}, nil
-	}
+	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyUSD, int64(100)).Return(map[string]int64{"GBP": 100}, nil).Once()
 	_, err = s.service.Deposit(s.ctx, 1, "USD", 100)
 	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
 }
 
 func (s *UseCaseSuite) TestWithdrawReturnsInsufficientFunds() {
-	s.storage.withdrawFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-		return nil, domain.ErrInsufficientFunds
-	}
+	s.storage.EXPECT().Withdraw(s.ctx, int64(1), domain.CurrencyUSD, int64(10050)).Return(nil, domain.ErrInsufficientFunds).Once()
 
 	_, err := s.service.Withdraw(s.ctx, 1, "USD", 10050)
 
@@ -186,9 +255,7 @@ func (s *UseCaseSuite) TestWithdrawReturnsInsufficientFunds() {
 }
 
 func (s *UseCaseSuite) TestWithdrawSuccessAndErrors() {
-	s.storage.withdrawFn = func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-		return map[string]int64{"USD": 5000}, nil
-	}
+	s.storage.EXPECT().Withdraw(s.ctx, int64(1), domain.CurrencyUSD, int64(100)).Return(map[string]int64{"USD": 5000}, nil).Once()
 	balance, err := s.service.Withdraw(s.ctx, 1, "USD", 100)
 	s.Require().NoError(err)
 	s.Require().Equal(int64(5000), balance["USD"])
@@ -201,13 +268,12 @@ func (s *UseCaseSuite) TestWithdrawSuccessAndErrors() {
 }
 
 func (s *UseCaseSuite) TestGetExchangeRates() {
-	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}, nil).Once()
 
 	rates, err := s.service.GetExchangeRates(s.ctx)
 
 	s.Require().NoError(err)
 	s.Require().Equal(float64(0.92), rates["EUR"])
-	s.Require().Equal(1, s.exchanger.getRatesCalls)
 }
 
 func (s *UseCaseSuite) TestGetExchangeRatesErrors() {
@@ -216,34 +282,33 @@ func (s *UseCaseSuite) TestGetExchangeRatesErrors() {
 	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 
 	s.service.exchanger = s.exchanger
-	s.exchanger.err = errBoom
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(nil, errBoom).Once()
 	_, err = s.service.GetExchangeRates(s.ctx)
 	s.Require().ErrorIs(err, errBoom)
 
-	s.exchanger.err = nil
-	s.exchanger.rates = map[string]float64{"GBP": 1}
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(map[string]float64{"GBP": 1}, nil).Once()
 	_, err = s.service.GetExchangeRates(s.ctx)
 	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
 
-	s.exchanger.rates = map[string]float64{"USD": 0}
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(map[string]float64{"USD": 0}, nil).Once()
 	_, err = s.service.GetExchangeRates(s.ctx)
 	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 
-	s.exchanger.rates = map[string]float64{"USD": 1}
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(map[string]float64{"USD": 1}, nil).Once()
 	_, err = s.service.GetExchangeRates(s.ctx)
 	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 }
 
 func (s *UseCaseSuite) TestExchangeConvertsAndStoresAtomically() {
-	s.exchanger.rate = 0.92
-	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
-		s.Require().Equal(int64(1), userID)
-		s.Require().Equal(domain.CurrencyUSD, fromCurrency)
-		s.Require().Equal(domain.CurrencyEUR, toCurrency)
-		s.Require().Equal(int64(10000), fromAmountMinor)
-		s.Require().Equal(int64(9200), toAmountMinor)
-		return map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0}, nil
-	}
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(0.92), nil).Once()
+	s.storage.EXPECT().Exchange(
+		s.ctx,
+		int64(1),
+		domain.CurrencyUSD,
+		domain.CurrencyEUR,
+		int64(10000),
+		int64(9200),
+	).Return(map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0}, nil).Once()
 
 	result, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{
 		UserID:       1,
@@ -255,19 +320,21 @@ func (s *UseCaseSuite) TestExchangeConvertsAndStoresAtomically() {
 	s.Require().NoError(err)
 	s.Require().Equal(int64(9200), result.ExchangedAmountMinor)
 	s.Require().Equal(int64(9200), result.NewBalance["EUR"])
-	s.Require().Equal(1, s.exchanger.getRateCalls)
 }
 
 func (s *UseCaseSuite) TestExchangeUsesCachedRatesAfterGetExchangeRates() {
-	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}, nil).Once()
 	_, err := s.service.GetExchangeRates(s.ctx)
 	s.Require().NoError(err)
 
-	s.exchanger.err = errBoom
-	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
-		s.Require().Equal(int64(9200), toAmountMinor)
-		return map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0}, nil
-	}
+	s.storage.EXPECT().Exchange(
+		s.ctx,
+		int64(1),
+		domain.CurrencyUSD,
+		domain.CurrencyEUR,
+		int64(10000),
+		int64(9200),
+	).Return(map[string]int64{"USD": 0, "EUR": 9200, "RUB": 0}, nil).Once()
 
 	result, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{
 		UserID:       1,
@@ -278,11 +345,10 @@ func (s *UseCaseSuite) TestExchangeUsesCachedRatesAfterGetExchangeRates() {
 
 	s.Require().NoError(err)
 	s.Require().Equal(int64(9200), result.ExchangedAmountMinor)
-	s.Require().Zero(s.exchanger.getRateCalls)
 }
 
 func (s *UseCaseSuite) TestExchangeRefreshesExpiredRatesCache() {
-	s.exchanger.rates = map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}
+	s.exchanger.EXPECT().GetRates(s.ctx).Return(map[string]float64{"USD": 1, "EUR": 0.92, "RUB": 90}, nil).Once()
 	_, err := s.service.GetExchangeRates(s.ctx)
 	s.Require().NoError(err)
 
@@ -290,11 +356,15 @@ func (s *UseCaseSuite) TestExchangeRefreshesExpiredRatesCache() {
 	s.service.ratesCachedAt = time.Now().Add(-time.Minute)
 	s.service.ratesCacheMu.Unlock()
 
-	s.exchanger.rate = 0.5
-	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
-		s.Require().Equal(int64(5000), toAmountMinor)
-		return map[string]int64{"USD": 5000, "EUR": 5000, "RUB": 0}, nil
-	}
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(0.5), nil).Once()
+	s.storage.EXPECT().Exchange(
+		s.ctx,
+		int64(1),
+		domain.CurrencyUSD,
+		domain.CurrencyEUR,
+		int64(10000),
+		int64(5000),
+	).Return(map[string]int64{"USD": 5000, "EUR": 5000, "RUB": 0}, nil).Once()
 
 	result, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{
 		UserID:       1,
@@ -305,7 +375,34 @@ func (s *UseCaseSuite) TestExchangeRefreshesExpiredRatesCache() {
 
 	s.Require().NoError(err)
 	s.Require().Equal(int64(5000), result.ExchangedAmountMinor)
-	s.Require().Equal(1, s.exchanger.getRateCalls)
+}
+
+func (s *UseCaseSuite) TestExchangePublishesLargeOperation() {
+	s.service.publisher = s.publisher
+	s.exchanger.EXPECT().GetRate(s.ctx, "RUB", "USD").Return(float64(0.011), nil).Once()
+	s.storage.EXPECT().Exchange(
+		s.ctx,
+		int64(1),
+		domain.CurrencyRUB,
+		domain.CurrencyUSD,
+		int64(3000000),
+		int64(33000),
+	).Return(map[string]int64{"RUB": 0, "USD": 33000}, nil).Once()
+	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
+		return event.OperationType == events.OperationTypeExchange &&
+			event.Currency == "RUB" &&
+			event.AmountMinor == 3000000 &&
+			event.AmountRubMinor == 3000000
+	})).Return(nil).Once()
+
+	_, err := s.service.Exchange(s.ctx, domain.ExchangeOperation{
+		UserID:       1,
+		FromCurrency: domain.CurrencyRUB,
+		ToCurrency:   domain.CurrencyUSD,
+		AmountMinor:  3000000,
+	})
+
+	s.Require().NoError(err)
 }
 
 func (s *UseCaseSuite) TestExchangeErrors() {
@@ -319,130 +416,41 @@ func (s *UseCaseSuite) TestExchangeErrors() {
 	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 
 	s.service.exchanger = s.exchanger
-	s.exchanger.err = errBoom
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(0), errBoom).Once()
 	_, err = s.service.Exchange(s.ctx, validOp)
 	s.Require().ErrorIs(err, errBoom)
 
-	s.exchanger.err = nil
-	s.exchanger.rate = 0
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(0), nil).Once()
 	_, err = s.service.Exchange(s.ctx, validOp)
 	s.Require().ErrorIs(err, domain.ErrExchangeRateUnavailable)
 
-	s.exchanger.rate = 0.001
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(0.001), nil).Once()
 	_, err = s.service.Exchange(s.ctx, validOp)
 	s.Require().ErrorIs(err, domain.ErrConvertedAmountTooSmall)
 
-	s.exchanger.rate = 1
-	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
-		return nil, domain.ErrInsufficientFunds
-	}
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(1), nil).Once()
+	s.storage.EXPECT().Exchange(
+		s.ctx,
+		int64(1),
+		domain.CurrencyUSD,
+		domain.CurrencyEUR,
+		int64(100),
+		int64(100),
+	).Return(nil, domain.ErrInsufficientFunds).Once()
 	_, err = s.service.Exchange(s.ctx, validOp)
 	s.Require().ErrorIs(err, domain.ErrInsufficientFunds)
 
-	s.storage.exchangeFn = func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
-		return map[string]int64{"GBP": 100}, nil
-	}
+	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "EUR").Return(float64(1), nil).Once()
+	s.storage.EXPECT().Exchange(
+		s.ctx,
+		int64(1),
+		domain.CurrencyUSD,
+		domain.CurrencyEUR,
+		int64(100),
+		int64(100),
+	).Return(map[string]int64{"GBP": 100}, nil).Once()
 	_, err = s.service.Exchange(s.ctx, validOp)
 	s.Require().ErrorIs(err, domain.ErrInvalidCurrency)
-}
-
-type fakeTokenManager struct {
-	token  string
-	userID int64
-	err    error
-}
-
-func (f *fakeTokenManager) Generate(userID int64) (string, error) {
-	f.userID = userID
-	return f.token, f.err
-}
-
-type fakeExchanger struct {
-	rates         map[string]float64
-	rate          float64
-	err           error
-	getRatesCalls int
-	getRateCalls  int
-}
-
-func (f *fakeExchanger) GetRates(ctx context.Context) (map[string]float64, error) {
-	f.getRatesCalls++
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.rates, nil
-}
-
-func (f *fakeExchanger) GetRate(ctx context.Context, fromCurrency string, toCurrency string) (float64, error) {
-	f.getRateCalls++
-	if f.err != nil {
-		return 0, f.err
-	}
-	return f.rate, nil
-}
-
-type fakeStorage struct {
-	credentials    domain.UserCredentials
-	credentialsErr error
-	balances       map[string]int64
-	balancesErr    error
-
-	createUserFn func(ctx context.Context, username string, email string, passwordHash string) (domain.User, error)
-	depositFn    func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error)
-	withdrawFn   func(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error)
-	exchangeFn   func(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error)
-}
-
-func (f *fakeStorage) CreateUser(ctx context.Context, username string, email string, passwordHash string) (domain.User, error) {
-	if f.createUserFn != nil {
-		return f.createUserFn(ctx, username, email, passwordHash)
-	}
-	return domain.User{ID: 1, Username: username, Email: email}, nil
-}
-
-func (f *fakeStorage) GetUserCredentialsByUsername(ctx context.Context, username string) (domain.UserCredentials, error) {
-	if f.credentialsErr != nil {
-		return domain.UserCredentials{}, f.credentialsErr
-	}
-	if f.credentials.ID == 0 {
-		return domain.UserCredentials{}, storages.ErrUserNotFound
-	}
-	return f.credentials, nil
-}
-
-func (f *fakeStorage) GetBalances(ctx context.Context, userID int64) (map[string]int64, error) {
-	if f.balancesErr != nil {
-		return nil, f.balancesErr
-	}
-	if f.balances == nil {
-		return nil, storages.ErrUserNotFound
-	}
-	return f.balances, nil
-}
-
-func (f *fakeStorage) Deposit(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-	if f.depositFn != nil {
-		return f.depositFn(ctx, userID, currency, amountMinor)
-	}
-	return f.balances, nil
-}
-
-func (f *fakeStorage) Withdraw(ctx context.Context, userID int64, currency domain.Currency, amountMinor int64) (map[string]int64, error) {
-	if f.withdrawFn != nil {
-		return f.withdrawFn(ctx, userID, currency, amountMinor)
-	}
-	return f.balances, nil
-}
-
-func (f *fakeStorage) Exchange(ctx context.Context, userID int64, fromCurrency domain.Currency, toCurrency domain.Currency, fromAmountMinor int64, toAmountMinor int64) (map[string]int64, error) {
-	if f.exchangeFn != nil {
-		return f.exchangeFn(ctx, userID, fromCurrency, toCurrency, fromAmountMinor, toAmountMinor)
-	}
-	return f.balances, nil
-}
-
-func (f *fakeStorage) Close() error {
-	return nil
 }
 
 var errBoom = errors.New("boom")

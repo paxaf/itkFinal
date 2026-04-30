@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/auth"
+	eventClient "github.com/paxaf/itkFinal/gw-currency-wallet/internal/clients/events"
 	exchangerClient "github.com/paxaf/itkFinal/gw-currency-wallet/internal/clients/exchanger"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/config"
 	"github.com/paxaf/itkFinal/gw-currency-wallet/internal/logger"
@@ -26,6 +27,7 @@ import (
 const (
 	shutdownTimeout   = 10 * time.Second
 	readHeaderTimeout = 5 * time.Second
+	kafkaPingTimeout  = 5 * time.Second
 )
 
 type App struct {
@@ -33,6 +35,7 @@ type App struct {
 	log        *logger.Logger
 	apiStorage storages.Storage
 	exchanger  *exchangerClient.Client
+	publisher  *eventClient.KafkaPublisher
 	server     *http.Server
 	path       string
 }
@@ -64,7 +67,23 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("create exchanger client: %w", err)
 	}
 
-	walletUC := usecase.New(apiStorage, tokenManager, exchanger)
+	kafkaCtx, kafkaCancel := context.WithTimeout(context.Background(), kafkaPingTimeout)
+	defer kafkaCancel()
+
+	publisher, err := eventClient.New(kafkaCtx, cfg.Kafka)
+	if err != nil {
+		_ = exchanger.Close()
+		_ = apiStorage.Close()
+		return nil, fmt.Errorf("create event publisher: %w", err)
+	}
+
+	walletUC := usecase.New(
+		apiStorage,
+		tokenManager,
+		exchanger,
+		publisher,
+		cfg.Kafka.LargeOperationThresholdRubMinor,
+	)
 
 	handler := walletHTTP.NewHandler(walletUC, tokenManager, log)
 	server := &http.Server{
@@ -79,6 +98,7 @@ func New() (*App, error) {
 		"postgres_host": cfg.Postgres.Host,
 		"postgres_db":   cfg.Postgres.Name,
 		"exchanger":     cfg.Exchanger.Address(),
+		"kafka_brokers": cfg.Kafka.Brokers,
 		"log_level":     cfg.Logger.Level,
 	})
 
@@ -87,6 +107,7 @@ func New() (*App, error) {
 		log:        log,
 		apiStorage: apiStorage,
 		exchanger:  exchanger,
+		publisher:  publisher,
 		server:     server,
 		path:       configPath,
 	}, nil
@@ -142,6 +163,15 @@ func (a *App) Close() error {
 				return fmt.Errorf("%v; close exchanger client: %w", closeErr, err)
 			}
 			closeErr = fmt.Errorf("close exchanger client: %w", err)
+		}
+	}
+
+	if a.publisher != nil {
+		if err := a.publisher.Close(); err != nil {
+			if closeErr != nil {
+				return fmt.Errorf("%v; close event publisher: %w", closeErr, err)
+			}
+			closeErr = fmt.Errorf("close event publisher: %w", err)
 		}
 	}
 

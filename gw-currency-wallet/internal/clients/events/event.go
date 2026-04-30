@@ -2,6 +2,12 @@ package events
 
 import "time"
 
+const (
+	OperationTypeDeposit  = "deposit"
+	OperationTypeWithdraw = "withdraw"
+	OperationTypeExchange = "exchange"
+)
+
 type LargeOperationEvent struct {
 	EventID        string    `json:"event_id"`
 	UserID         int64     `json:"user_id"`
