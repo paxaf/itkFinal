@@ -25,5 +25,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("EXCHANGER_GRPC_PORT", 50051)
 	v.SetDefault("EXCHANGER_GRPC_REQUEST_TIMEOUT_MS", 3000)
 
+	v.SetDefault("KAFKA_BROKERS", "localhost:9092")
+	v.SetDefault("KAFKA_TOPIC", "large-money-operations")
+	v.SetDefault("LARGE_OPERATION_THRESHOLD_RUB_MINOR", 3000000)
+
 	v.SetDefault("LOG_LEVEL", "info")
 }

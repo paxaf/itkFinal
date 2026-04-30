@@ -14,6 +14,7 @@ type Config struct {
 	Postgres  Postgres  `mapstructure:",squash"`
 	Auth      Auth      `mapstructure:",squash"`
 	Exchanger Exchanger `mapstructure:",squash"`
+	Kafka     Kafka     `mapstructure:",squash"`
 	Logger    Logger    `mapstructure:",squash"`
 }
 
@@ -43,6 +44,12 @@ type Exchanger struct {
 	Host             string `mapstructure:"EXCHANGER_GRPC_HOST"`
 	Port             int    `mapstructure:"EXCHANGER_GRPC_PORT"`
 	RequestTimeoutMS int    `mapstructure:"EXCHANGER_GRPC_REQUEST_TIMEOUT_MS"`
+}
+
+type Kafka struct {
+	Brokers                         string `mapstructure:"KAFKA_BROKERS"`
+	Topic                           string `mapstructure:"KAFKA_TOPIC"`
+	LargeOperationThresholdRubMinor int64  `mapstructure:"LARGE_OPERATION_THRESHOLD_RUB_MINOR"`
 }
 
 type Logger struct {
@@ -125,6 +132,16 @@ func (c *Config) validate() error {
 		return fmt.Errorf("EXCHANGER_GRPC_REQUEST_TIMEOUT_MS must be greater than 0")
 	}
 
+	if len(c.Kafka.BrokerList()) == 0 {
+		return fmt.Errorf("KAFKA_BROKERS is required")
+	}
+	if strings.TrimSpace(c.Kafka.Topic) == "" {
+		return fmt.Errorf("KAFKA_TOPIC is required")
+	}
+	if c.Kafka.LargeOperationThresholdRubMinor <= 0 {
+		return fmt.Errorf("LARGE_OPERATION_THRESHOLD_RUB_MINOR must be greater than 0")
+	}
+
 	level := strings.ToLower(strings.TrimSpace(c.Logger.Level))
 	if level == "" {
 		level = "info"
@@ -171,4 +188,16 @@ func (e *Exchanger) Address() string {
 
 func (e *Exchanger) RequestTimeout() time.Duration {
 	return time.Duration(e.RequestTimeoutMS) * time.Millisecond
+}
+
+func (k *Kafka) BrokerList() []string {
+	parts := strings.Split(k.Brokers, ",")
+	brokers := make([]string, 0, len(parts))
+	for _, part := range parts {
+		broker := strings.TrimSpace(part)
+		if broker != "" {
+			brokers = append(brokers, broker)
+		}
+	}
+	return brokers
 }
