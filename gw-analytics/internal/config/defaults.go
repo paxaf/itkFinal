@@ -14,5 +14,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("KAFKA_BATCH_SIZE", 128)
 	v.SetDefault("KAFKA_BATCH_WAIT_MS", 50)
 
+	v.SetDefault("ELASTIC_ADDRESSES", "http://localhost:9200")
+	v.SetDefault("ELASTIC_USERNAME", "")
+	v.SetDefault("ELASTIC_PASSWORD", "")
+	v.SetDefault("ELASTIC_INDEX", "wallet_operations")
+
 	v.SetDefault("LOG_LEVEL", "info")
 }

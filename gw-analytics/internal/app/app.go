@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -14,13 +13,13 @@ import (
 	"github.com/paxaf/itkFinal/gw-analytics/internal/config"
 	"github.com/paxaf/itkFinal/gw-analytics/internal/logger"
 	"github.com/paxaf/itkFinal/gw-analytics/internal/storages"
+	elasticStorage "github.com/paxaf/itkFinal/gw-analytics/internal/storages/elastic"
 	kafkaTransport "github.com/paxaf/itkFinal/gw-analytics/internal/transport/kafka"
 	"github.com/paxaf/itkFinal/gw-analytics/internal/usecase"
 )
 
 const shutdownTimeout = 10 * time.Second
-
-var ErrStorageNotImplemented = errors.New("analytics storage is not implemented")
+const storageInitTimeout = 10 * time.Second
 
 type consumer interface {
 	Run(ctx context.Context) error
@@ -50,19 +49,27 @@ func NewWithStorage(storage storages.Storage) (*App, error) {
 
 	log := logger.New(cfg.Logger.Level)
 	if storage == nil {
-		return nil, fmt.Errorf("%w: Elasticsearch storage will be added separately", ErrStorageNotImplemented)
+		storageCtx, cancel := context.WithTimeout(context.Background(), storageInitTimeout)
+		defer cancel()
+
+		storage, err = elasticStorage.New(storageCtx, cfg.Elasticsearch)
+		if err != nil {
+			return nil, fmt.Errorf("init elastic storage: %w", err)
+		}
 	}
 
 	analyticsUC := usecase.New(storage)
 	consumer := kafkaTransport.New(cfg.Kafka, analyticsUC, log)
 
 	log.Info("application initialized", map[string]interface{}{
-		"config_path":      configPath,
-		"kafka_brokers":    cfg.Kafka.BrokerList(),
-		"kafka_topic":      cfg.Kafka.Topic,
-		"kafka_group_id":   cfg.Kafka.GroupID,
-		"kafka_batch_size": cfg.Kafka.BatchSize,
-		"log_level":        cfg.Logger.Level,
+		"config_path":       configPath,
+		"kafka_brokers":     cfg.Kafka.BrokerList(),
+		"kafka_topic":       cfg.Kafka.Topic,
+		"kafka_group_id":    cfg.Kafka.GroupID,
+		"kafka_batch_size":  cfg.Kafka.BatchSize,
+		"elastic_addresses": cfg.Elasticsearch.AddressList(),
+		"elastic_index":     cfg.Elasticsearch.Index,
+		"log_level":         cfg.Logger.Level,
 	})
 
 	return &App{

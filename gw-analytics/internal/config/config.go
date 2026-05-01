@@ -10,8 +10,9 @@ import (
 )
 
 type Config struct {
-	Kafka  Kafka  `mapstructure:",squash"`
-	Logger Logger `mapstructure:",squash"`
+	Kafka         Kafka         `mapstructure:",squash"`
+	Elasticsearch Elasticsearch `mapstructure:",squash"`
+	Logger        Logger        `mapstructure:",squash"`
 }
 
 type Kafka struct {
@@ -27,6 +28,13 @@ type Kafka struct {
 
 type Logger struct {
 	Level string `mapstructure:"LOG_LEVEL"`
+}
+
+type Elasticsearch struct {
+	Addresses string `mapstructure:"ELASTIC_ADDRESSES"`
+	Username  string `mapstructure:"ELASTIC_USERNAME"`
+	Password  string `mapstructure:"ELASTIC_PASSWORD"`
+	Index     string `mapstructure:"ELASTIC_INDEX"`
 }
 
 func Load(path string) (*Config, error) {
@@ -90,6 +98,12 @@ func (c *Config) validate() error {
 	if c.Kafka.BatchWaitMS <= 0 {
 		return fmt.Errorf("KAFKA_BATCH_WAIT_MS must be greater than 0")
 	}
+	if len(c.Elasticsearch.AddressList()) == 0 {
+		return fmt.Errorf("ELASTIC_ADDRESSES is required")
+	}
+	if strings.TrimSpace(c.Elasticsearch.Index) == "" {
+		return fmt.Errorf("ELASTIC_INDEX is required")
+	}
 
 	level := strings.ToLower(strings.TrimSpace(c.Logger.Level))
 	if level == "" {
@@ -124,4 +138,16 @@ func (k *Kafka) MaxWait() time.Duration {
 
 func (k *Kafka) BatchWait() time.Duration {
 	return time.Duration(k.BatchWaitMS) * time.Millisecond
+}
+
+func (e *Elasticsearch) AddressList() []string {
+	parts := strings.Split(e.Addresses, ",")
+	addresses := make([]string, 0, len(parts))
+	for _, part := range parts {
+		address := strings.TrimSpace(part)
+		if address != "" {
+			addresses = append(addresses, address)
+		}
+	}
+	return addresses
 }

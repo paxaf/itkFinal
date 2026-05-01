@@ -1,8 +1,8 @@
 ﻿# gw-analytics
 
-`gw-analytics` - фоновый сервис аналитики. Он читает события операций из Kafka, валидирует их, обрабатывает микробатчами и передает дальше в слой хранения.
+`gw-analytics` - фоновый сервис аналитики. Он читает события операций из Kafka, валидирует их, обрабатывает микробатчами и сохраняет в Elasticsearch.
 
-Слой Elasticsearch пока намеренно не реализован. Мы оставили для него интерфейс storage, чтобы отдельно спокойно разобрать Elastic, индекс, документ, идемпотентность и агрегации.
+Kibana используется как интерфейс для просмотра документов и построения агрегаций поверх индекса Elasticsearch.
 
 ## Задача сервиса
 
@@ -17,25 +17,22 @@
 
 ## Текущий статус
 
-Сейчас готов каркас:
+Сервис готов к запуску в общем `docker-compose`:
 
 - загрузка конфига через `viper`;
 - логгер такой же, как в остальных сервисах;
 - Kafka consumer с batch-обработкой;
 - контракт события `OperationEvent`;
 - валидация события в domain/usecase;
-- интерфейс storage под будущий Elasticsearch;
+- Elasticsearch storage с bulk-записью событий;
+- идемпотентность через `event_id` как `_id` документа;
+- подключение Elasticsearch storage в `app`;
 - unit-тесты через `suite`;
+- интеграционные тесты Elasticsearch через testcontainers;
 - автогенерация моков через `mockery`;
 - Dockerfile и entrypoint.
 
-Пока не реализовано:
-
-- подключение к Elasticsearch;
-- сохранение событий в Elasticsearch;
-- создание индекса и mapping;
-- запросы/агрегации к Elasticsearch;
-- docker-compose секция для `gw-analytics` и Elasticsearch.
+Агрегации по типам, статусам, latency, ошибкам и периодам делаются на стороне Kibana через Data View, Lens и Dashboard.
 
 ## Поток данных
 
@@ -103,10 +100,11 @@ Consumer работает так:
 
 Kafka дает режим `at-least-once`: сообщение может прийти повторно.
 
-План для Elasticsearch:
+Реализация в Elasticsearch:
 
 - использовать `event_id` как `_id` документа;
-- повторная запись события с тем же `event_id` не должна создавать дубль;
+- повторная запись события с тем же `event_id` не создаёт дубль;
+- повторная доставка увеличивает `delivery_count` и `duplicate_count`;
 - commit offset делать только после успешной записи batch;
 - ошибки записи логировать и возвращать наверх, чтобы batch был обработан повторно.
 
@@ -123,10 +121,18 @@ KAFKA_MAX_BYTES=10485760
 KAFKA_MAX_WAIT_MS=500
 KAFKA_BATCH_SIZE=128
 KAFKA_BATCH_WAIT_MS=50
+ELASTIC_ADDRESSES=http://localhost:9200
+ELASTIC_USERNAME=
+ELASTIC_PASSWORD=
+ELASTIC_INDEX=wallet_operations
 LOG_LEVEL=debug
 ```
 
-В Docker Compose сервис позже будет обращаться к Kafka и Elasticsearch по именам контейнеров.
+В Docker Compose сервис обращается к Kafka и Elasticsearch по именам контейнеров:
+
+- Kafka: `kafka:9092`
+- Elasticsearch: `http://elasticsearch:9200`
+- Kibana: `http://localhost:5601`
 
 ## Локальный запуск
 
@@ -134,13 +140,42 @@ LOG_LEVEL=debug
 go run ./cmd -c config.env
 ```
 
-На текущем этапе запуск приложения завершится ошибкой `analytics storage is not implemented`. Это ожидаемо: storage для Elasticsearch будет добавлен отдельным шагом.
+Для локального запуска нужны доступные Kafka и Elasticsearch. Внутри общего compose эти зависимости уже настроены.
 
 ## Docker
 
-В сервисе уже есть Dockerfile и простой `entrypoint.sh`.
+В сервисе есть Dockerfile и простой `entrypoint.sh`.
 
-Контейнер можно собрать, но полноценно запускать сервис в compose будем после того, как добавим Elasticsearch storage и зависимый контейнер Elasticsearch.
+Из корня репозитория:
+
+```shell
+docker compose up --build gw-analytics kibana
+```
+
+В общем compose также поднимаются Kafka и Elasticsearch как зависимости.
+
+Для запуска всего стенда:
+
+```shell
+docker compose up --build
+```
+
+## Kibana
+
+После запуска compose открой Kibana:
+
+```text
+http://localhost:5601
+```
+
+В Kibana нужно создать Data View:
+
+```text
+Index pattern: wallet_operations
+Timestamp field: created_at
+```
+
+После этого данные будут доступны в Discover, Lens и Dashboard.
 
 ## Тесты и моки
 
@@ -153,7 +188,17 @@ make test
 
 `make test` сначала перегенерирует моки, затем запускает unit-тесты.
 
-Интеграционных тестов пока нет, потому что слой Elasticsearch еще не написан. Когда добавим storage, сделаем интеграционные тесты со skip-флагом и автоматическим пропуском, если Docker недоступен.
+Интеграционные тесты Elasticsearch:
+
+```shell
+make test-integration
+```
+
+Если Docker недоступен, интеграционные тесты автоматически пропускаются. Для явного пропуска:
+
+```shell
+make test-skip-integration-elastic
+```
 
 ## Линтинг и сборка
 

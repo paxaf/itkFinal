@@ -26,6 +26,8 @@ func (s *ConfigSuite) TestLoadMissingFileUsesDefaults() {
 	s.Require().Equal("gw-analytics", cfg.Kafka.GroupID)
 	s.Require().Equal(128, cfg.Kafka.BatchSize)
 	s.Require().Equal(50*time.Millisecond, cfg.Kafka.BatchWait())
+	s.Require().Equal([]string{"http://localhost:9200"}, cfg.Elasticsearch.AddressList())
+	s.Require().Equal("wallet_operations", cfg.Elasticsearch.Index)
 	s.Require().Equal("info", cfg.Logger.Level)
 }
 
@@ -36,6 +38,10 @@ KAFKA_TOPIC=events
 KAFKA_GROUP_ID=test-group
 KAFKA_BATCH_SIZE=64
 KAFKA_BATCH_WAIT_MS=25
+ELASTIC_ADDRESSES=http://elastic-1:9200, http://elastic-2:9200
+ELASTIC_USERNAME=elastic
+ELASTIC_PASSWORD=secret
+ELASTIC_INDEX=test_operations
 LOG_LEVEL=DEBUG
 `)
 
@@ -47,6 +53,10 @@ LOG_LEVEL=DEBUG
 	s.Require().Equal("test-group", cfg.Kafka.GroupID)
 	s.Require().Equal(64, cfg.Kafka.BatchSize)
 	s.Require().Equal(25*time.Millisecond, cfg.Kafka.BatchWait())
+	s.Require().Equal([]string{"http://elastic-1:9200", "http://elastic-2:9200"}, cfg.Elasticsearch.AddressList())
+	s.Require().Equal("elastic", cfg.Elasticsearch.Username)
+	s.Require().Equal("secret", cfg.Elasticsearch.Password)
+	s.Require().Equal("test_operations", cfg.Elasticsearch.Index)
 	s.Require().Equal("debug", cfg.Logger.Level)
 }
 

@@ -5,7 +5,7 @@ override export GO111MODULE := on
 override export USERPROFILE := $(WIN_USERPROFILE)
 override export LOCALAPPDATA := $(WIN_LOCALAPPDATA)
 
-.PHONY: build lint mocks mocks-debug test test-all tidy test-debug
+.PHONY: build lint mocks mocks-debug test test-all test-integration test-skip-integration-elastic tidy test-debug
 
 build:
 	go build -o main ./cmd
@@ -27,10 +27,16 @@ mocks:
 	mockery --config .mockery.yaml
 
 test: mocks
-	go test ./...
+	go test ./... -skip Integration
 
 test-all: mocks
 	go test ./...
+
+test-integration:
+	go test ./internal/storages/elastic
+
+test-skip-integration-elastic:
+	go test ./internal/storages/elastic -skip-integration
 
 tidy:
 	go mod tidy
