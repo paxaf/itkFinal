@@ -111,3 +111,43 @@ make build
 ```
 
 Линтер настроен через `.golangci.yml`; тестовые файлы линтером не проверяются.
+
+## Доступы в общем compose
+
+При запуске из корня репозитория сервис доступен с хоста как gRPC endpoint:
+
+```text
+localhost:50051
+```
+
+Если compose запущен внутри VM, вместо `localhost` нужно использовать IP этой VM:
+
+```text
+<vm-ip>:50051
+```
+
+PostgreSQL для сервиса доступен:
+
+- внутри docker-сети: `exchanger-db:5432`;
+- с хоста: `localhost:5433`;
+- база: `exchange`;
+- пользователь: `postgres`;
+- пароль: `postgres`.
+
+Пример ручной проверки через `grpcurl` из корня репозитория:
+
+```shell
+grpcurl -plaintext \
+  -import-path ./proto-exchange \
+  -proto exchange/exchange.proto \
+  localhost:50051 \
+  exchange.ExchangeService/GetExchangeRates
+```
+
+## Статус перед сдачей
+
+- Сервис запускается в Docker Compose.
+- Миграции применяются через `goose` при старте контейнера.
+- Unit-тесты и интеграционные PostgreSQL-тесты проходят.
+- Моки генерируются через `mockery`.
+- Линтер и сборка проходят.

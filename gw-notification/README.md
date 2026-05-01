@@ -151,3 +151,54 @@ make build
 ```
 
 Линтер настроен через `.golangci.yml`; тестовые файлы линтером не проверяются.
+
+## Доступы в общем compose
+
+Сервис не открывает внешний HTTP или gRPC порт. Он работает как фоновый consumer внутри docker-сети.
+
+Kafka topic:
+
+```text
+wallet.large-operations
+```
+
+MongoDB с хоста доступна так:
+
+```text
+localhost:27018
+```
+
+Параметры MongoDB для dev-стенда:
+
+- пользователь: `mongo`;
+- пароль: `mongo`;
+- auth database: `admin`;
+- рабочая база: `notification`;
+- коллекция: `large_operations`.
+
+Внутри docker-сети сервис использует:
+
+- Kafka: `kafka:9092`;
+- MongoDB: `notification-mongo:27017`.
+
+## Проверка данных
+
+После крупной операции в wallet документ должен появиться в MongoDB collection `large_operations`. Проверить можно из контейнера:
+
+```shell
+docker compose exec notification-mongo mongosh \
+  --username mongo \
+  --password mongo \
+  --authenticationDatabase admin \
+  --eval "db.getSiblingDB('notification').large_operations.countDocuments()"
+```
+
+## Статус перед сдачей
+
+- Сервис читает только topic крупных операций `wallet.large-operations`.
+- Batch-обработка настроена через `KAFKA_BATCH_SIZE` и `KAFKA_BATCH_WAIT_MS`.
+- Offset коммитится после успешной обработки batch.
+- Идемпотентность реализована уникальным индексом MongoDB по `event_id`.
+- Unit-тесты и интеграционные MongoDB-тесты проходят.
+- Моки генерируются через `mockery`.
+- Линтер и сборка проходят.

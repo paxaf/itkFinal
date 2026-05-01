@@ -30,12 +30,13 @@ type Reader interface {
 
 func New(cfg config.Kafka, handler usecase.LargeOperationHandler, log logger.Interface) *Consumer {
 	reader := kafkago.NewReader(kafkago.ReaderConfig{
-		Brokers:  cfg.BrokerList(),
-		Topic:    cfg.Topic,
-		GroupID:  cfg.GroupID,
-		MinBytes: cfg.MinBytes,
-		MaxBytes: cfg.MaxBytes,
-		MaxWait:  cfg.MaxWait(),
+		Brokers:               cfg.BrokerList(),
+		Topic:                 cfg.Topic,
+		GroupID:               cfg.GroupID,
+		MinBytes:              cfg.MinBytes,
+		MaxBytes:              cfg.MaxBytes,
+		MaxWait:               cfg.MaxWait(),
+		WatchPartitionChanges: true,
 	})
 	return &Consumer{
 		reader:    reader,

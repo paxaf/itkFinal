@@ -6,7 +6,6 @@ import (
 	context "context"
 
 	kafka_go "github.com/segmentio/kafka-go"
-
 	mock "github.com/stretchr/testify/mock"
 )
 

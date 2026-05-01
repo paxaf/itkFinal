@@ -208,3 +208,87 @@ make build
 ```
 
 Линтер настроен через `.golangci.yml`; тестовые файлы линтером не проверяются.
+
+## Доступы в общем compose
+
+Сервис не открывает внешний HTTP или gRPC порт. Он работает как фоновый Kafka consumer внутри docker-сети.
+
+Kafka topic:
+
+```text
+wallet.operations
+```
+
+Elasticsearch доступен с хоста:
+
+```text
+http://localhost:9200
+```
+
+Kibana доступна с хоста:
+
+```text
+http://localhost:5601
+```
+
+Если compose запущен внутри VM, вместо `localhost` нужно использовать IP этой VM:
+
+```text
+http://<vm-ip>:5601
+```
+
+Внутри docker-сети сервис использует:
+
+- Kafka: `kafka:9092`;
+- Elasticsearch: `http://elasticsearch:9200`;
+- индекс Elasticsearch: `wallet_operations`.
+
+## Агрегации по периодам
+
+Требование по получению данных за периоды `1 минута`, `5 минут`, `1 час`, `1 день`, `1 неделя` выполняется на стороне Kibana поверх индекса Elasticsearch.
+
+Сервис сохраняет каждое событие с полями:
+
+- `created_at` - время создания события в wallet;
+- `delivered_at` - время сохранения события в analytics;
+- `latency_ms` - задержка между созданием и доставкой;
+- `operation_type` - тип операции;
+- `status` - статус операции;
+- `error` - текст ошибки для неуспешных операций.
+
+В Kibana создаётся Data View `wallet_operations` с timestamp field `created_at`. После этого в Lens или Dashboard можно строить:
+
+- количество событий по `operation_type`;
+- количество событий по `status`;
+- среднюю, минимальную, максимальную и percentile latency по `latency_ms`;
+- частоту ошибок через фильтр `status: FAILED`;
+- агрегации по времени через Date histogram с интервалами `1m`, `5m`, `1h`, `1d`, `1w`.
+
+Такой вариант оставляет сервис простым consumer/storage-слоем, а аналитические срезы переносит в инструмент, который для этого предназначен.
+
+## Проверка данных
+
+Количество документов в индексе можно проверить так:
+
+```shell
+curl http://localhost:9200/wallet_operations/_count
+```
+
+Пример запроса latency-статистики:
+
+```shell
+curl -X POST http://localhost:9200/wallet_operations/_search \
+  -H "Content-Type: application/json" \
+  -d '{"size":0,"aggs":{"latency":{"stats":{"field":"latency_ms"}}}}'
+```
+
+## Статус перед сдачей
+
+- Сервис читает topic всех операций `wallet.operations`.
+- Batch-обработка настроена через `KAFKA_BATCH_SIZE` и `KAFKA_BATCH_WAIT_MS`.
+- Offset коммитится после успешной обработки batch.
+- Идемпотентность реализована через `event_id` как `_id` документа Elasticsearch.
+- Повторная доставка не создаёт дубль и увеличивает счётчики доставки.
+- Unit-тесты и интеграционные Elasticsearch-тесты проходят.
+- Моки генерируются через `mockery`.
+- Линтер и сборка проходят.

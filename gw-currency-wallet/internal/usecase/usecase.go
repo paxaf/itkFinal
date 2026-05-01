@@ -70,6 +70,7 @@ type Service struct {
 	exchanger    ExchangeProvider
 	publisher    EventPublisher
 	log          Logger
+	publishAsync func(func())
 
 	largeOperationThresholdRubMinor int64
 
@@ -97,7 +98,21 @@ func New(
 		exchanger:                       exchanger,
 		publisher:                       publisher,
 		log:                             log,
+		publishAsync:                    defaultPublishAsync,
 		largeOperationThresholdRubMinor: largeOperationThresholdRubMinor,
 		ratesCacheTTL:                   defaultRatesCacheTTL,
 	}
+}
+
+func defaultPublishAsync(fn func()) {
+	go fn()
+}
+
+func (s *Service) runPublishAsync(fn func()) {
+	if s.publishAsync == nil {
+		defaultPublishAsync(fn)
+		return
+	}
+
+	s.publishAsync(fn)
 }

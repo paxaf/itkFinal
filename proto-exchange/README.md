@@ -48,3 +48,30 @@ import exchangegrpc "github.com/paxaf/itkFinal/proto-exchange/exchange"
 ```
 
 `gw-exchanger` реализует серверную сторону контракта, а `gw-currency-wallet` использует сгенерированный gRPC-клиент.
+
+## Доступы и использование в compose
+
+Сам модуль не запускается как сервис. Его используют:
+
+- `gw-exchanger` как gRPC server;
+- `gw-currency-wallet` как gRPC client.
+
+В общем compose exchanger слушает:
+
+```text
+gw-exchanger:50051
+```
+
+С хоста gRPC endpoint доступен как:
+
+```text
+localhost:50051
+```
+
+Если compose запущен внутри VM, вместо `localhost` нужно использовать IP этой VM.
+
+## Статус перед сдачей
+
+- Контракт вынесен в отдельный Go-модуль.
+- Сгенерированные Go-файлы лежат рядом с `exchange.proto`.
+- `gw-exchanger` и `gw-currency-wallet` используют один и тот же контракт.

@@ -177,3 +177,62 @@ make build
 ```
 
 Линтер настроен через `.golangci.yml`; тестовые файлы линтером не проверяются.
+
+## Доступы в общем compose
+
+Основной адрес REST API при локальном запуске compose:
+
+```text
+http://localhost:8080
+```
+
+Если compose запущен внутри VM, вместо `localhost` нужно использовать IP этой VM:
+
+```text
+http://<vm-ip>:8080
+```
+
+Swagger доступен по адресу:
+
+```text
+http://localhost:8080/swagger/index.html
+```
+
+Зависимости внутри docker-сети:
+
+- PostgreSQL: `wallet-db:5432`;
+- Exchanger gRPC: `gw-exchanger:50051`;
+- Kafka: `kafka:9092`.
+
+Доступ к PostgreSQL wallet с хоста:
+
+- адрес: `localhost:5434`;
+- база: `wallet`;
+- пользователь: `postgres`;
+- пароль: `postgres`.
+
+## Быстрая проверка через Postman
+
+1. `GET http://localhost:8080/api/v1/health`.
+2. `POST http://localhost:8080/api/v1/register` с `username`, `email`, `password`.
+3. `POST http://localhost:8080/api/v1/login`, сохранить `token`.
+4. Для приватных ручек добавить заголовок `Authorization: Bearer <token>`.
+5. Проверить `GET /api/v1/balance`, `POST /api/v1/wallet/deposit`, `POST /api/v1/wallet/withdraw`, `GET /api/v1/exchange/rates`, `POST /api/v1/exchange`.
+6. Для проверки notification и analytics выполнить операцию на сумму от `30000 RUB`.
+
+## События для analytics
+
+Помимо крупных операций сервис публикует события всех денежных операций в Kafka topic `wallet.operations`. Эти события читает `gw-analytics` и сохраняет в Elasticsearch. В событии есть тип операции, статус, сумма, валюта, сумма в RUB minor, время создания и ошибка для неуспешной операции.
+
+## Статус перед сдачей
+
+- Приватные ручки защищены JWT.
+- Пароли хранятся только как bcrypt-хэш.
+- Денежные значения хранятся в minor units.
+- PostgreSQL-операции выполняются транзакционно.
+- gRPC-клиент exchanger подключен.
+- Kafka publisher отправляет события для notification и analytics.
+- Swagger-документация доступна.
+- Unit-тесты и интеграционные PostgreSQL-тесты проходят.
+- Моки генерируются через `mockery`.
+- Линтер и сборка проходят.

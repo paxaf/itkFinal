@@ -28,6 +28,19 @@
       timeout: 5s
       retries: 12
 
+  kafka-init:
+    image: apache/kafka:4.1.1
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic wallet.operations --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic wallet.large-operations --partitions 1 --replication-factor 1
+
   gw-exchanger:
     build:
       context: ./gw-exchanger
@@ -91,8 +104,8 @@
         condition: service_healthy
       gw-exchanger:
         condition: service_started
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   gw-notification:
     build:
@@ -120,8 +133,8 @@
       MONGO_CONNECT_TIMEOUT_MS: 5000
       LOG_LEVEL: debug
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       notification-mongo:
         condition: service_healthy
 
@@ -146,8 +159,8 @@
       ELASTIC_INDEX: wallet_operations
       LOG_LEVEL: debug
     depends_on:
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       elasticsearch:
         condition: service_healthy
 

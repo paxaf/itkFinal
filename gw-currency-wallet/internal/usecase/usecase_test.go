@@ -40,6 +40,9 @@ func (s *UseCaseSuite) SetupTest() {
 	s.publisher = usecasemocks.NewEventPublisherMock(s.T())
 	s.log = usecasemocks.NewLoggerMock(s.T())
 	s.service = New(s.storage, s.tokens, s.exchanger, nil, 3000000, nil)
+	s.service.publishAsync = func(fn func()) {
+		fn()
+	}
 }
 
 func (s *UseCaseSuite) TestRegisterHashesPasswordAndCreatesUser() {
@@ -181,7 +184,7 @@ func (s *UseCaseSuite) TestDepositPublishesLargeOperation() {
 	s.service.publisher = s.publisher
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
 	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "RUB", 3000000, 3000000, "")
-	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
+	s.publisher.EXPECT().PublishLargeOperation(mock.Anything, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
 		return event.EventID != "" &&
 			event.UserID == 1 &&
 			event.OperationType == events.OperationTypeDeposit &&
@@ -200,9 +203,9 @@ func (s *UseCaseSuite) TestDepositPublishesLargeOperation() {
 func (s *UseCaseSuite) TestDepositPublishesLargeOperationWithRubEquivalent() {
 	s.service.publisher = s.publisher
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyUSD, int64(40000)).Return(map[string]int64{"USD": 40000}, nil).Once()
-	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "RUB").Return(float64(90), nil).Once()
+	s.exchanger.EXPECT().GetRate(mock.Anything, "USD", "RUB").Return(float64(90), nil).Once()
 	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "USD", 40000, 3600000, "")
-	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
+	s.publisher.EXPECT().PublishLargeOperation(mock.Anything, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
 		return event.OperationType == events.OperationTypeDeposit &&
 			event.Currency == "USD" &&
 			event.AmountMinor == 40000 &&
@@ -230,7 +233,7 @@ func (s *UseCaseSuite) TestDepositIgnoresPublishError() {
 	s.service.log = s.log
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
 	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "RUB", 3000000, 3000000, "")
-	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.AnythingOfType("events.LargeOperationEvent")).Return(errBoom).Once()
+	s.publisher.EXPECT().PublishLargeOperation(mock.Anything, mock.AnythingOfType("events.LargeOperationEvent")).Return(errBoom).Once()
 	s.log.EXPECT().Error("publish large operation failed", mock.MatchedBy(func(fields map[string]interface{}) bool {
 		return fields["error"] == errBoom.Error() &&
 			fields["event_id"] != "" &&
@@ -405,7 +408,7 @@ func (s *UseCaseSuite) TestExchangePublishesLargeOperation() {
 		int64(33000),
 	).Return(map[string]int64{"RUB": 0, "USD": 33000}, nil).Once()
 	s.expectOperationPublish(events.OperationTypeExchange, events.OperationStatusSuccess, "RUB", 3000000, 3000000, "")
-	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
+	s.publisher.EXPECT().PublishLargeOperation(mock.Anything, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
 		return event.OperationType == events.OperationTypeExchange &&
 			event.Currency == "RUB" &&
 			event.AmountMinor == 3000000 &&
@@ -480,7 +483,7 @@ func (s *UseCaseSuite) expectOperationPublish(
 	amountRubMinor int64,
 	errorMessage string,
 ) {
-	s.publisher.EXPECT().PublishOperation(s.ctx, mock.MatchedBy(func(event events.OperationEvent) bool {
+	s.publisher.EXPECT().PublishOperation(mock.Anything, mock.MatchedBy(func(event events.OperationEvent) bool {
 		return event.EventID != "" &&
 			event.UserID == 1 &&
 			event.OperationType == operationType &&
