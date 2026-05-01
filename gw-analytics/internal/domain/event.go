@@ -14,7 +14,6 @@ var (
 	ErrInvalidCurrency      = errors.New("invalid currency")
 	ErrInvalidAmount        = errors.New("invalid amount")
 	ErrInvalidCreatedAt     = errors.New("invalid created at")
-	ErrInvalidRetryCount    = errors.New("invalid retry count")
 	ErrInvalidErrorMessage  = errors.New("invalid error message")
 )
 
@@ -45,7 +44,6 @@ type OperationEvent struct {
 	AmountRubMinor int64     `json:"amount_rub_minor"`
 	CreatedAt      time.Time `json:"created_at"`
 	Error          string    `json:"error,omitempty"`
-	RetryCount     int       `json:"retry_count"`
 }
 
 func (e OperationEvent) Validate() error {
@@ -75,9 +73,6 @@ func (e OperationEvent) Validate() error {
 	}
 	if e.CreatedAt.IsZero() {
 		return ErrInvalidCreatedAt
-	}
-	if e.RetryCount < 0 {
-		return ErrInvalidRetryCount
 	}
 	if status == "FAILED" && strings.TrimSpace(e.Error) == "" {
 		return ErrInvalidErrorMessage

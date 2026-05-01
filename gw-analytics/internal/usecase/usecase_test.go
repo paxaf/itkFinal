@@ -113,6 +113,5 @@ func validEvent(eventID string) domain.OperationEvent {
 		AmountMinor:    5_000_000,
 		AmountRubMinor: 5_000_000,
 		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
-		RetryCount:     0,
 	}
 }

@@ -59,8 +59,7 @@ gw-currency-wallet -> Kafka topic wallet.operations -> gw-analytics -> Elasticse
   "amount_minor": 5000000,
   "amount_rub_minor": 5000000,
   "created_at": "2026-04-30T12:00:00Z",
-  "error": "",
-  "retry_count": 0
+  "error": ""
 }
 ```
 
@@ -75,7 +74,6 @@ gw-currency-wallet -> Kafka topic wallet.operations -> gw-analytics -> Elasticse
 - `amount_rub_minor` - сумма операции в RUB minor.
 - `created_at` - время создания события на стороне wallet.
 - `error` - текст ошибки для неуспешной операции.
-- `retry_count` - количество повторных обработок события.
 
 ## Batch-обработка
 

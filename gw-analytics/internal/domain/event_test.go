@@ -92,13 +92,6 @@ func (s *EventSuite) TestOperationEventValidateErrors() {
 			wantErr: ErrInvalidCreatedAt,
 		},
 		{
-			name: "negative retry count",
-			mutate: func(event *OperationEvent) {
-				event.RetryCount = -1
-			},
-			wantErr: ErrInvalidRetryCount,
-		},
-		{
 			name: "failed without error",
 			mutate: func(event *OperationEvent) {
 				event.Status = "FAILED"
@@ -127,6 +120,5 @@ func validEvent() OperationEvent {
 		AmountMinor:    5_000_000,
 		AmountRubMinor: 5_000_000,
 		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
-		RetryCount:     0,
 	}
 }
