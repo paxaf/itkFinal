@@ -1,0 +1,7 @@
+.gocache/
+.gopath/
+.tmp/
+bin/
+main
+cmd.exe
+coverage.out

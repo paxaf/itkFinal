@@ -1,0 +1,14 @@
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  enable:
+    - bodyclose
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
