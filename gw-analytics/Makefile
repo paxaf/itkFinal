@@ -1,9 +1,11 @@
+override export GO111MODULE := on
+
+ifeq ($(OS),Windows_NT)
 WIN_USERPROFILE := $(strip $(shell powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('UserProfile')"))
 WIN_LOCALAPPDATA := $(strip $(shell powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('LocalApplicationData')"))
-
-override export GO111MODULE := on
 override export USERPROFILE := $(WIN_USERPROFILE)
 override export LOCALAPPDATA := $(WIN_LOCALAPPDATA)
+endif
 
 .PHONY: build lint mocks mocks-debug test test-all test-integration test-skip-integration-elastic tidy test-debug
 

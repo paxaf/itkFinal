@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"math"
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/paxaf/itkFinal/gw-exchanger/internal/config"
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/suite"
 	tc "github.com/testcontainers/testcontainers-go"
@@ -78,6 +80,18 @@ func (s *PostgresIntegrationSuite) SetupSuite() {
 	s.pool = &PgPool{pool: pgxPool}
 }
 
+func (s *PostgresIntegrationSuite) SetupTest() {
+	_, err := s.db.ExecContext(s.ctx, `
+TRUNCATE exchange_rates;
+INSERT INTO exchange_rates (currency_code, units_per_usd)
+VALUES
+	('USD', 1.0000),
+	('RUB', 90.0000),
+	('EUR', 0.9200);
+`)
+	s.Require().NoError(err)
+}
+
 func (s *PostgresIntegrationSuite) TearDownSuite() {
 	if s.pool != nil {
 		_ = s.pool.Close()
@@ -88,6 +102,13 @@ func (s *PostgresIntegrationSuite) TearDownSuite() {
 	if s.container != nil {
 		_ = s.container.Terminate(context.Background())
 	}
+}
+
+func (s *PostgresIntegrationSuite) TestNewConnector() {
+	pool, err := New(s.postgresConfig())
+
+	s.Require().NoError(err)
+	s.Require().NoError(pool.Close())
 }
 
 func (s *PostgresIntegrationSuite) TestGetRates() {
@@ -111,10 +132,69 @@ func (s *PostgresIntegrationSuite) TestGetRate() {
 	s.Require().True(math.Abs(rate-(0.92/90.0)) < 0.000001)
 }
 
+func (s *PostgresIntegrationSuite) TestGetRateForSameCurrency() {
+	rate, err := s.pool.GetRate(s.ctx, "USD", "USD")
+
+	s.Require().NoError(err)
+	s.Require().Equal(1.0, rate)
+}
+
 func (s *PostgresIntegrationSuite) TestGetRateReturnsErrorWhenCurrencyMissing() {
 	_, err := s.pool.GetRate(s.ctx, "USD", "GBP")
 
 	s.Require().Error(err)
+}
+
+func (s *PostgresIntegrationSuite) TestGetRateReturnsErrorWhenBothCurrenciesMissing() {
+	_, err := s.pool.GetRate(s.ctx, "GBP", "JPY")
+
+	s.Require().Error(err)
+}
+
+func (s *PostgresIntegrationSuite) TestGetRatesReturnsEmptyMap() {
+	_, err := s.db.ExecContext(s.ctx, "TRUNCATE exchange_rates")
+	s.Require().NoError(err)
+
+	rates, err := s.pool.GetRates(s.ctx)
+
+	s.Require().NoError(err)
+	s.Require().Empty(rates)
+}
+
+func (s *PostgresIntegrationSuite) TestClosedPoolReturnsErrors() {
+	pool, err := New(s.postgresConfig())
+	s.Require().NoError(err)
+	s.Require().NoError(pool.Close())
+
+	_, err = pool.GetRate(s.ctx, "USD", "RUB")
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "query get rate")
+
+	_, err = pool.GetRates(s.ctx)
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "query get rates")
+}
+
+func (s *PostgresIntegrationSuite) postgresConfig() *config.Postgres {
+	host, err := s.container.Host(s.ctx)
+	s.Require().NoError(err)
+
+	port, err := s.container.MappedPort(s.ctx, "5432/tcp")
+	s.Require().NoError(err)
+
+	portNumber, err := strconv.Atoi(port.Port())
+	s.Require().NoError(err)
+
+	return &config.Postgres{
+		Host:         host,
+		Port:         portNumber,
+		User:         "postgres",
+		Password:     "postgres",
+		Name:         "exchange",
+		SSLMode:      "disable",
+		MaxOpenConns: 5,
+		MaxIdleConns: 1,
+	}
 }
 
 func waitForSQLReady(ctx context.Context, db *sql.DB, timeout time.Duration) error {

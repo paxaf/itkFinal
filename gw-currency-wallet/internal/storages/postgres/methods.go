@@ -53,7 +53,8 @@ func (p *PgPool) CreateUser(ctx context.Context, username string, email string, 
 	err = tx.QueryRow(ctx, QueryInsertUser, username, email, passwordHash).Scan(&user.ID, &user.Username, &user.Email)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return domain.User{}, storages.ErrDuplicateUser
+			err = storages.ErrDuplicateUser
+			return domain.User{}, err
 		}
 		return domain.User{}, fmt.Errorf("insert user: %w", err)
 	}
@@ -158,7 +159,8 @@ func (p *PgPool) Withdraw(ctx context.Context, userID int64, currency domain.Cur
 		return nil, err
 	}
 	if balance < amountMinor {
-		return nil, domain.ErrInsufficientFunds
+		err = domain.ErrInsufficientFunds
+		return nil, err
 	}
 
 	if err = updateBalanceDelta(ctx, tx, userID, currency, -amountMinor); err != nil {
@@ -197,10 +199,12 @@ func (p *PgPool) Exchange(ctx context.Context, userID int64, fromCurrency domain
 	}
 	fromBalance, ok := lockedBalances[fromCurrency]
 	if !ok {
-		return nil, storages.ErrUserNotFound
+		err = storages.ErrUserNotFound
+		return nil, err
 	}
 	if fromBalance < fromAmountMinor {
-		return nil, domain.ErrInsufficientFunds
+		err = domain.ErrInsufficientFunds
+		return nil, err
 	}
 
 	if err = updateBalanceDelta(ctx, tx, userID, fromCurrency, -fromAmountMinor); err != nil {
