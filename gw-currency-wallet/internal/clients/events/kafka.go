@@ -12,6 +12,7 @@ import (
 
 type KafkaPublisher struct {
 	writer               *kafka.Writer
+	operationsTopic      string
 	largeOperationsTopic string
 }
 
@@ -28,6 +29,7 @@ func New(ctx context.Context, cfg config.Kafka) (*KafkaPublisher, error) {
 
 	return &KafkaPublisher{
 		writer:               writer,
+		operationsTopic:      cfg.OperationsTopic,
 		largeOperationsTopic: cfg.LargeOperationsTopic,
 	}, nil
 }
@@ -77,6 +79,22 @@ func (k *KafkaPublisher) PublishLargeOperation(ctx context.Context, event LargeO
 		Value: payload,
 	}); err != nil {
 		return fmt.Errorf("write large operation event: %w", err)
+	}
+	return nil
+}
+
+func (k *KafkaPublisher) PublishOperation(ctx context.Context, event OperationEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal operation event: %w", err)
+	}
+
+	if err = k.writer.WriteMessages(ctx, kafka.Message{
+		Topic: k.operationsTopic,
+		Key:   []byte(strconv.FormatInt(event.UserID, 10)),
+		Value: payload,
+	}); err != nil {
+		return fmt.Errorf("write operation event: %w", err)
 	}
 	return nil
 }

@@ -31,10 +31,10 @@ packages:
         config:
           filename: exchange_provider_mock.go
           mockname: ExchangeProviderMock
-      LargeOperationPublisher:
+      EventPublisher:
         config:
-          filename: large_operation_publisher_mock.go
-          mockname: LargeOperationPublisherMock
+          filename: event_publisher_mock.go
+          mockname: EventPublisherMock
       UseCase:
         config:
           dir: internal/mocks/usecaseapi

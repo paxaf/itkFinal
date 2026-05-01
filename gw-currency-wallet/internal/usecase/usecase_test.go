@@ -23,7 +23,7 @@ type UseCaseSuite struct {
 	storage   *storagesmocks.StorageMock
 	tokens    *usecasemocks.TokenManagerMock
 	exchanger *usecasemocks.ExchangeProviderMock
-	publisher *usecasemocks.LargeOperationPublisherMock
+	publisher *usecasemocks.EventPublisherMock
 	log       *usecasemocks.LoggerMock
 	service   *Service
 }
@@ -37,7 +37,7 @@ func (s *UseCaseSuite) SetupTest() {
 	s.storage = storagesmocks.NewStorageMock(s.T())
 	s.tokens = usecasemocks.NewTokenManagerMock(s.T())
 	s.exchanger = usecasemocks.NewExchangeProviderMock(s.T())
-	s.publisher = usecasemocks.NewLargeOperationPublisherMock(s.T())
+	s.publisher = usecasemocks.NewEventPublisherMock(s.T())
 	s.log = usecasemocks.NewLoggerMock(s.T())
 	s.service = New(s.storage, s.tokens, s.exchanger, nil, 3000000, nil)
 }
@@ -180,6 +180,7 @@ func (s *UseCaseSuite) TestDepositCallsStorage() {
 func (s *UseCaseSuite) TestDepositPublishesLargeOperation() {
 	s.service.publisher = s.publisher
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
+	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "RUB", 3000000, 3000000, "")
 	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
 		return event.EventID != "" &&
 			event.UserID == 1 &&
@@ -200,6 +201,7 @@ func (s *UseCaseSuite) TestDepositPublishesLargeOperationWithRubEquivalent() {
 	s.service.publisher = s.publisher
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyUSD, int64(40000)).Return(map[string]int64{"USD": 40000}, nil).Once()
 	s.exchanger.EXPECT().GetRate(s.ctx, "USD", "RUB").Return(float64(90), nil).Once()
+	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "USD", 40000, 3600000, "")
 	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
 		return event.OperationType == events.OperationTypeDeposit &&
 			event.Currency == "USD" &&
@@ -216,6 +218,7 @@ func (s *UseCaseSuite) TestDepositPublishesLargeOperationWithRubEquivalent() {
 func (s *UseCaseSuite) TestDepositSkipsSmallOperation() {
 	s.service.publisher = s.publisher
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(2999999)).Return(map[string]int64{"RUB": 2999999}, nil).Once()
+	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "RUB", 2999999, 2999999, "")
 
 	_, err := s.service.Deposit(s.ctx, 1, "rub", 2999999)
 
@@ -226,6 +229,7 @@ func (s *UseCaseSuite) TestDepositIgnoresPublishError() {
 	s.service.publisher = s.publisher
 	s.service.log = s.log
 	s.storage.EXPECT().Deposit(s.ctx, int64(1), domain.CurrencyRUB, int64(3000000)).Return(map[string]int64{"RUB": 3000000}, nil).Once()
+	s.expectOperationPublish(events.OperationTypeDeposit, events.OperationStatusSuccess, "RUB", 3000000, 3000000, "")
 	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.AnythingOfType("events.LargeOperationEvent")).Return(errBoom).Once()
 	s.log.EXPECT().Error("publish large operation failed", mock.MatchedBy(func(fields map[string]interface{}) bool {
 		return fields["error"] == errBoom.Error() &&
@@ -400,6 +404,7 @@ func (s *UseCaseSuite) TestExchangePublishesLargeOperation() {
 		int64(3000000),
 		int64(33000),
 	).Return(map[string]int64{"RUB": 0, "USD": 33000}, nil).Once()
+	s.expectOperationPublish(events.OperationTypeExchange, events.OperationStatusSuccess, "RUB", 3000000, 3000000, "")
 	s.publisher.EXPECT().PublishLargeOperation(s.ctx, mock.MatchedBy(func(event events.LargeOperationEvent) bool {
 		return event.OperationType == events.OperationTypeExchange &&
 			event.Currency == "RUB" &&
@@ -466,3 +471,24 @@ func (s *UseCaseSuite) TestExchangeErrors() {
 }
 
 var errBoom = errors.New("boom")
+
+func (s *UseCaseSuite) expectOperationPublish(
+	operationType string,
+	status string,
+	currency string,
+	amountMinor int64,
+	amountRubMinor int64,
+	errorMessage string,
+) {
+	s.publisher.EXPECT().PublishOperation(s.ctx, mock.MatchedBy(func(event events.OperationEvent) bool {
+		return event.EventID != "" &&
+			event.UserID == 1 &&
+			event.OperationType == operationType &&
+			event.Status == status &&
+			event.Currency == currency &&
+			event.AmountMinor == amountMinor &&
+			event.AmountRubMinor == amountRubMinor &&
+			event.Error == errorMessage &&
+			!event.CreatedAt.IsZero()
+	})).Return(nil).Once()
+}
