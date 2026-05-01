@@ -47,7 +47,6 @@ func (s *Service) checkAndPublish(
 		AmountRubMinor: amountRubMinor,
 		CreatedAt:      createdAt,
 		Error:          errorMessage,
-		RetryCount:     0,
 	}
 
 	if err = s.publisher.PublishOperation(ctx, operationEvent); err != nil {

@@ -35,5 +35,4 @@ type OperationEvent struct {
 	AmountRubMinor int64     `json:"amount_rub_minor"`
 	CreatedAt      time.Time `json:"created_at"`
 	Error          string    `json:"error,omitempty"`
-	RetryCount     int       `json:"retry_count"`
 }
