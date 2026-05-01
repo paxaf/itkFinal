@@ -11,7 +11,6 @@ import (
 )
 
 func (s *Service) checkAndPublish(
-	ctx context.Context,
 	userID int64,
 	operationType string,
 	currency domain.Currency,
@@ -21,6 +20,9 @@ func (s *Service) checkAndPublish(
 	if s.publisher == nil {
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	amountRubMinor, err := s.amountRubMinor(ctx, currency, amountMinor)
 	if err != nil {

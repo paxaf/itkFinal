@@ -26,7 +26,7 @@ func (s *Service) Deposit(ctx context.Context, userID int64, currencyCode string
 		return nil, err
 	}
 	defer func() {
-		go s.checkAndPublish(ctx, userID, events.OperationTypeDeposit, currency, amountMinor, err)
+		go s.checkAndPublish(userID, events.OperationTypeDeposit, currency, amountMinor, err)
 	}()
 
 	if userID <= 0 {
@@ -55,7 +55,7 @@ func (s *Service) Withdraw(ctx context.Context, userID int64, currencyCode strin
 		return nil, err
 	}
 	defer func() {
-		go s.checkAndPublish(ctx, userID, events.OperationTypeWithdraw, currency, amountMinor, err)
+		go s.checkAndPublish(userID, events.OperationTypeWithdraw, currency, amountMinor, err)
 	}()
 
 	if userID <= 0 {

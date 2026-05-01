@@ -29,7 +29,7 @@ func (s *Service) GetExchangeRates(ctx context.Context) (map[string]float64, err
 
 func (s *Service) Exchange(ctx context.Context, op domain.ExchangeOperation) (result ExchangeResult, err error) {
 	defer func() {
-		go s.checkAndPublish(ctx, op.UserID, events.OperationTypeExchange, op.FromCurrency, op.AmountMinor, err)
+		go s.checkAndPublish(op.UserID, events.OperationTypeExchange, op.FromCurrency, op.AmountMinor, err)
 	}()
 
 	if err := op.Validate(); err != nil {
